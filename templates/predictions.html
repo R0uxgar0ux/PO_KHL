@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Текущие прогнозы</h2>
+<p>Ставки вынесены отдельно от личного кабинета. Матчи сгруппированы по конференциям КХЛ.</p>
+
+<div class="card">
+  <h3>Веса стадий</h3>
+  <ul>
+    {% for code, weight in round_weights.items() %}
+      <li>{{ code }}: x{{ weight }}</li>
+    {% endfor %}
+  </ul>
+</div>
+
+{% for conference_code in ['W', 'E'] %}
+  <h3 class="conference-title">{{ conference_labels[conference_code] }}</h3>
+  <div class="grid">
+  {% for match in grouped_matches.get(conference_code, []) %}
+    <section class="card">
+      <h4>{{ match.home_team }} — {{ match.away_team }}</h4>
+      <p><strong>Стадия:</strong> {{ match.round_label }}</p>
+      <p>Начало: {{ match.kickoff.strftime('%d.%m.%Y %H:%M') }} МСК</p>
+      {% if match.is_finished %}
+        <p class="result">Итог: {{ match.home_score }} : {{ match.away_score }}</p>
+      {% endif %}
+
+      {% set prediction = prediction_by_match.get(match.id) %}
+      <form method="post" class="prediction-form">
+        <input type="hidden" name="match_id" value="{{ match.id }}" />
+        <label>{{ match.home_team }}
+          <input type="number" min="0" name="predicted_home" value="{{ prediction.predicted_home if prediction else 0 }}" {% if match.is_finished %}disabled{% endif %} required />
+        </label>
+        <label>{{ match.away_team }}
+          <input type="number" min="0" name="predicted_away" value="{{ prediction.predicted_away if prediction else 0 }}" {% if match.is_finished %}disabled{% endif %} required />
+        </label>
+        <button type="submit" {% if match.is_finished %}disabled{% endif %}>Сохранить прогноз</button>
+      </form>
+    </section>
+  {% else %}
+    <p>Пока нет пар в этой конференции.</p>
+  {% endfor %}
+  </div>
+{% endfor %}
+{% endblock %}
