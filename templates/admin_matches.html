@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
 {% block content %}
 <h2>Серии плей-офф (админ)</h2>
-<p>1) Быстро создайте серию (пару). 2) Ниже добавляйте в неё матчи с датой/временем <strong>МСК</strong>.</p>
+<p>Создайте серию один раз: команды, стадия, конференция и дедлайн прогноза. Отдельные даты матчей для прогноза не требуются.</p>
 
 <section class="card">
-  <h3>Шаг 1: Создать серию</h3>
+  <h3>Создать серию</h3>
   <form method="post" class="prediction-form">
     <input type="hidden" name="action" value="create_series" />
     <label>Команда A
@@ -27,31 +27,10 @@
         {% endfor %}
       </select>
     </label>
+    <label>Дедлайн прогноза (МСК)
+      <input type="datetime-local" name="prediction_deadline" required />
+    </label>
     <button type="submit">Создать серию</button>
-  </form>
-</section>
-
-<section class="card">
-  <h3>Шаг 2: Добавить матч в серию (время МСК)</h3>
-  <form method="post" class="prediction-form">
-    <input type="hidden" name="action" value="add_game" />
-    <label>Серия
-      <select name="series_id" required>
-        {% for s in series_list %}
-          <option value="{{ s.id }}">{{ s.conference_label }} · {{ s.round_label }} · {{ s.team_a }} — {{ s.team_b }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Кто хозяин
-      <select name="host_side">
-        <option value="A">Команда A (первая)</option>
-        <option value="B">Команда B (вторая)</option>
-      </select>
-    </label>
-    <label>Дата и время матча (МСК)
-      <input type="datetime-local" name="kickoff" required />
-    </label>
-    <button type="submit">Добавить матч в серию</button>
   </form>
 </section>
 
@@ -59,7 +38,7 @@
   <h3>Текущие серии</h3>
   <table>
     <thead>
-      <tr><th>Конференция</th><th>Стадия</th><th>Серия</th><th>Действия</th></tr>
+      <tr><th>Конференция</th><th>Стадия</th><th>Серия</th><th>Дедлайн (МСК)</th><th>Действия</th></tr>
     </thead>
     <tbody>
       {% for s in series_list %}
@@ -67,36 +46,12 @@
         <td>{{ s.conference_label }}</td>
         <td>{{ s.round_label }}</td>
         <td>{{ s.team_a }} — {{ s.team_b }}</td>
+        <td>{% if s.prediction_deadline %}{{ s.prediction_deadline.strftime('%d.%m.%Y %H:%M') }}{% else %}—{% endif %}</td>
         <td>
-          <form method="post" class="inline-form" onsubmit="return confirm('Удалить серию и все матчи в ней?');">
+          <form method="post" class="inline-form" onsubmit="return confirm('Удалить серию?');">
             <input type="hidden" name="action" value="delete_series" />
             <input type="hidden" name="series_id" value="{{ s.id }}" />
             <button type="submit" class="danger">Удалить серию</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
-
-<section class="card">
-  <h3>Матчи в сериях</h3>
-  <table>
-    <thead>
-      <tr><th>Серия</th><th>Матч</th><th>Дата/время (МСК)</th><th>Действия</th></tr>
-    </thead>
-    <tbody>
-      {% for m in matches %}
-      <tr>
-        <td>{% if m.series %}{{ m.series.team_a }} — {{ m.series.team_b }}{% else %}—{% endif %}</td>
-        <td>{{ m.home_team }} — {{ m.away_team }}</td>
-        <td>{{ m.kickoff.strftime('%d.%m.%Y %H:%M') }}</td>
-        <td>
-          <form method="post" class="inline-form" onsubmit="return confirm('Удалить матч?');">
-            <input type="hidden" name="action" value="delete_match" />
-            <input type="hidden" name="match_id" value="{{ m.id }}" />
-            <button type="submit" class="danger">Удалить матч</button>
           </form>
         </td>
       </tr>

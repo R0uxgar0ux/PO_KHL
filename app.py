@@ -59,6 +59,7 @@ class PlayoffSeries(db.Model):
     team_b = db.Column(db.String(120), nullable=False)
     conference = db.Column(db.String(1), nullable=False, default="W")
     round_code = db.Column(db.String(8), nullable=False, default="R1")
+    prediction_deadline = db.Column(db.DateTime)
 
     @property
     def conference_label(self) -> str:
@@ -108,10 +109,25 @@ class Prediction(db.Model):
     __table_args__ = (db.UniqueConstraint("user_id", "match_id", name="uq_user_match"),)
 
 
+class SeriesPrediction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    series_id = db.Column(db.Integer, db.ForeignKey("playoff_series.id"), nullable=False)
+    predicted_wins_a = db.Column(db.Integer, nullable=False)
+    predicted_wins_b = db.Column(db.Integer, nullable=False)
+    game_outcomes = db.Column(db.String(32), nullable=False, default="")  # CSV of A/B outcomes by games
+
+    user = db.relationship("User", backref=db.backref("series_predictions", lazy=True))
+    series = db.relationship("PlayoffSeries", backref=db.backref("series_predictions", lazy=True))
+
+    __table_args__ = (db.UniqueConstraint("user_id", "series_id", name="uq_user_series"),)
+
+
 def ensure_schema_compatibility() -> None:
     inspector = db.inspect(db.engine)
     user_columns = {col["name"] for col in inspector.get_columns("user")}
     match_columns = {col["name"] for col in inspector.get_columns("match")}
+    series_columns = {col["name"] for col in inspector.get_columns("playoff_series")}
 
     if "is_admin" not in user_columns:
         db.session.execute(text("ALTER TABLE user ADD COLUMN is_admin BOOLEAN DEFAULT 0"))
@@ -128,6 +144,8 @@ def ensure_schema_compatibility() -> None:
         db.session.execute(text("ALTER TABLE match ADD COLUMN conference VARCHAR(1) DEFAULT 'W'"))
     if "series_id" not in match_columns:
         db.session.execute(text("ALTER TABLE match ADD COLUMN series_id INTEGER"))
+    if "prediction_deadline" not in series_columns:
+        db.session.execute(text("ALTER TABLE playoff_series ADD COLUMN prediction_deadline DATETIME"))
 
     db.session.commit()
 
@@ -141,8 +159,8 @@ def seed_matches() -> None:
     if Match.query.count() > 0 or PlayoffSeries.query.count() > 0:
         return
 
-    s1 = PlayoffSeries(team_a="СКА", team_b="Локомотив", conference="W", round_code="R1")
-    s2 = PlayoffSeries(team_a="Металлург", team_b="Авангард", conference="E", round_code="R1")
+    s1 = PlayoffSeries(team_a="СКА", team_b="Локомотив", conference="W", round_code="R1", prediction_deadline=datetime(2026, 3, 14, 18, 0))
+    s2 = PlayoffSeries(team_a="Металлург", team_b="Авангард", conference="E", round_code="R1", prediction_deadline=datetime(2026, 3, 15, 18, 0))
     db.session.add_all([s1, s2])
     db.session.flush()
 
@@ -404,7 +422,7 @@ def register_routes(app: Flask) -> None:
             points=points,
             rank=user_rank(user.id),
             total_users=User.query.count(),
-            predictions_count=len(user.predictions),
+            predictions_count=len(user.series_predictions),
             exact_hits=exact_hits,
         )
 
@@ -415,31 +433,68 @@ def register_routes(app: Flask) -> None:
             return redirect(url_for("login"))
 
         if request.method == "POST":
-            match = Match.query.get_or_404(int(request.form["match_id"]))
-            if match.is_finished:
-                flash("Нельзя менять прогноз после окончания матча")
+            series_id = int(request.form["series_id"])
+            series = PlayoffSeries.query.get_or_404(series_id)
+
+            if series.prediction_deadline and datetime.now() > series.prediction_deadline:
+                flash("Дедлайн прогноза по серии уже прошел")
                 return redirect(url_for("predictions"))
 
-            predicted_home = int(request.form["predicted_home"])
-            predicted_away = int(request.form["predicted_away"])
-            prediction = Prediction.query.filter_by(user_id=user.id, match_id=match.id).first()
+            wins_a = int(request.form["predicted_wins_a"])
+            wins_b = int(request.form["predicted_wins_b"])
+            if 4 not in (wins_a, wins_b):
+                flash("Серия играется до 4 побед — одна из команд должна иметь 4")
+                return redirect(url_for("predictions"))
+            if wins_a < 0 or wins_b < 0 or wins_a > 4 or wins_b > 4:
+                flash("Некорректный счет серии")
+                return redirect(url_for("predictions"))
+
+            games_count = wins_a + wins_b
+            if games_count > 7:
+                flash("В серии максимум 7 матчей")
+                return redirect(url_for("predictions"))
+
+            outcomes = request.form.getlist("game_outcomes")[:games_count]
+            if len(outcomes) != games_count:
+                flash("Заполните исходы всех матчей серии")
+                return redirect(url_for("predictions"))
+            if any(item not in ("A", "B") for item in outcomes):
+                flash("Некорректные исходы матчей")
+                return redirect(url_for("predictions"))
+            if outcomes.count("A") != wins_a or outcomes.count("B") != wins_b:
+                flash("Исходы матчей должны совпадать с итогом серии")
+                return redirect(url_for("predictions"))
+
+            serialized = ",".join(outcomes)
+            prediction = SeriesPrediction.query.filter_by(user_id=user.id, series_id=series.id).first()
             if prediction:
-                prediction.predicted_home = predicted_home
-                prediction.predicted_away = predicted_away
-                flash("Прогноз обновлен")
+                prediction.predicted_wins_a = wins_a
+                prediction.predicted_wins_b = wins_b
+                prediction.game_outcomes = serialized
+                flash("Прогноз по серии обновлен")
             else:
-                db.session.add(Prediction(user_id=user.id, match_id=match.id, predicted_home=predicted_home, predicted_away=predicted_away))
-                flash("Прогноз сохранен")
+                db.session.add(
+                    SeriesPrediction(
+                        user_id=user.id,
+                        series_id=series.id,
+                        predicted_wins_a=wins_a,
+                        predicted_wins_b=wins_b,
+                        game_outcomes=serialized,
+                    )
+                )
+                flash("Прогноз по серии сохранен")
             db.session.commit()
             return redirect(url_for("predictions"))
 
-        matches = Match.query.order_by(Match.kickoff).all()
+        series_list = PlayoffSeries.query.order_by(PlayoffSeries.round_code, PlayoffSeries.conference, PlayoffSeries.id).all()
+        prediction_by_series = {p.series_id: p for p in user.series_predictions}
         return render_template(
             "predictions.html",
-            grouped_matches=group_matches_by_conference(matches),
-            prediction_by_match={p.match_id: p for p in user.predictions},
-            round_weights=ROUND_WEIGHTS,
+            series_list=series_list,
+            prediction_by_series=prediction_by_series,
             conference_labels=CONFERENCE_LABELS,
+            round_labels=ROUND_LABELS,
+            now=datetime.now(),
         )
 
     @app.get("/results")
@@ -510,68 +565,44 @@ def register_routes(app: Flask) -> None:
         if request.method == "POST":
             action = request.form.get("action", "create_series")
 
-            if action == "delete_match":
-                match = Match.query.get_or_404(int(request.form["match_id"]))
-                Prediction.query.filter_by(match_id=match.id).delete()
-                db.session.delete(match)
-                db.session.commit()
-                flash("Матч удален")
-                return redirect(url_for("admin_matches"))
-
             if action == "delete_series":
                 series = PlayoffSeries.query.get_or_404(int(request.form["series_id"]))
                 for match in series.matches:
                     Prediction.query.filter_by(match_id=match.id).delete()
                     db.session.delete(match)
+                SeriesPrediction.query.filter_by(series_id=series.id).delete()
                 db.session.delete(series)
                 db.session.commit()
                 flash("Серия удалена")
                 return redirect(url_for("admin_matches"))
 
-            if action == "create_series":
-                team_a = request.form.get("team_a", "").strip()
-                team_b = request.form.get("team_b", "").strip()
-                conference = request.form.get("conference", "W")
-                round_code = request.form.get("round_code", "R1")
-                if not team_a or not team_b:
-                    flash("Заполните команды серии")
-                    return redirect(url_for("admin_matches"))
-                db.session.add(PlayoffSeries(team_a=team_a, team_b=team_b, conference=conference, round_code=round_code))
-                db.session.commit()
-                flash("Серия добавлена")
+            team_a = request.form.get("team_a", "").strip()
+            team_b = request.form.get("team_b", "").strip()
+            conference = request.form.get("conference", "W")
+            round_code = request.form.get("round_code", "R1")
+            deadline_raw = request.form.get("prediction_deadline", "")
+            if not team_a or not team_b or not deadline_raw:
+                flash("Заполните команды и дедлайн")
                 return redirect(url_for("admin_matches"))
 
-            if action == "add_game":
-                series = PlayoffSeries.query.get_or_404(int(request.form["series_id"]))
-                kickoff_raw = request.form.get("kickoff", "")
-                host_side = request.form.get("host_side", "A")
-                if not kickoff_raw:
-                    flash("Укажите дату и время матча (МСК)")
-                    return redirect(url_for("admin_matches"))
-
-                kickoff = datetime.strptime(kickoff_raw, "%Y-%m-%dT%H:%M")
-                home_team = series.team_a if host_side == "A" else series.team_b
-                away_team = series.team_b if host_side == "A" else series.team_a
-                db.session.add(
-                    Match(
-                        home_team=home_team,
-                        away_team=away_team,
-                        kickoff=kickoff,
-                        conference=series.conference,
-                        round_code=series.round_code,
-                        series_id=series.id,
-                    )
+            deadline = datetime.strptime(deadline_raw, "%Y-%m-%dT%H:%M")
+            db.session.add(
+                PlayoffSeries(
+                    team_a=team_a,
+                    team_b=team_b,
+                    conference=conference,
+                    round_code=round_code,
+                    prediction_deadline=deadline,
                 )
-                db.session.commit()
-                flash("Матч в серии добавлен")
-                return redirect(url_for("admin_matches"))
+            )
+            db.session.commit()
+            flash("Серия добавлена")
+            return redirect(url_for("admin_matches"))
 
         series_list = PlayoffSeries.query.order_by(PlayoffSeries.round_code, PlayoffSeries.id).all()
-        matches = Match.query.order_by(Match.kickoff).all()
         return render_template(
             "admin_matches.html",
             series_list=series_list,
-            matches=matches,
             conference_labels=CONFERENCE_LABELS,
             round_labels=ROUND_LABELS,
         )
@@ -600,6 +631,7 @@ def register_routes(app: Flask) -> None:
                 flash(f"Пользователь {target.username} разблокирован")
             elif action == "delete":
                 Prediction.query.filter_by(user_id=target.id).delete()
+                SeriesPrediction.query.filter_by(user_id=target.id).delete()
                 db.session.delete(target)
                 flash("Пользователь удален")
             db.session.commit()
