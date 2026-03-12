@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Текущие результаты</h2>
+<p>Ваши очки: <strong>{{ user_points }}</strong></p>
+
+<section class="card">
+  <details>
+    <summary><strong>Показать правила подсчёта очков</strong></summary>
+    <ul>
+      <li>+2 за угаданный исход матча</li>
+      <li>+2 за угаданную разницу шайб</li>
+      <li>+1 за угаданную сумму шайб</li>
+      <li>+4 за точный счет</li>
+      <li>+1 бонус за высокий тотал (7+), если по тоталу почти попадание</li>
+      <li>Дальше применяется вес стадии ПО</li>
+    </ul>
+  </details>
+</section>
+
+<section class="card">
+  <h3>Турнирная таблица прогнозистов</h3>
+  <table>
+    <thead>
+      <tr><th>Участник</th><th>Очки</th><th>Точных счетов</th></tr>
+    </thead>
+    <tbody>
+      {% for row in board %}
+      <tr>
+        <td>{{ row.username }}</td>
+        <td>{{ row.points }}</td>
+        <td>{{ row.exact_hits }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h3>Завершенные матчи</h3>
+  {% if not finished_matches %}
+    <p>Пока нет завершенных матчей.</p>
+  {% else %}
+    {% for match in finished_matches %}
+      <article class="match-row">
+        <h4>{{ match.conference_label }} · {{ match.round_label }} · {{ match.home_team }} {{ match.home_score }} : {{ match.away_score }} {{ match.away_team }}</h4>
+        <ul>
+          {% for prediction in match.predictions %}
+            {% set details = score_details(prediction) %}
+            <li>{{ prediction.user.username }}: {{ prediction.predicted_home }}:{{ prediction.predicted_away }} → {{ details.total }} очк.</li>
+          {% endfor %}
+        </ul>
+      </article>
+    {% endfor %}
+  {% endif %}
+</section>
+{% endblock %}
