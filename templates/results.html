@@ -4,15 +4,17 @@
 <p>Ваши очки: <strong>{{ user_points }}</strong></p>
 
 <section class="card">
-  <h3>Правила сложного подсчёта</h3>
-  <ul>
-    <li>+2 за угаданный исход матча</li>
-    <li>+2 за угаданную разницу шайб</li>
-    <li>+1 за угаданную сумму шайб</li>
-    <li>+4 за точный счет</li>
-    <li>+1 бонус за высокий тотал (7+), если по тоталу почти попадание</li>
-    <li>Итог умножается на вес стадии: R1 x1.0, QF x1.25, SF x1.6, F x2.2</li>
-  </ul>
+  <details>
+    <summary><strong>Показать правила подсчёта очков</strong></summary>
+    <ul>
+      <li>+2 за угаданный исход матча</li>
+      <li>+2 за угаданную разницу шайб</li>
+      <li>+1 за угаданную сумму шайб</li>
+      <li>+4 за точный счет</li>
+      <li>+1 бонус за высокий тотал (7+), если по тоталу почти попадание</li>
+      <li>Дальше применяется вес стадии ПО</li>
+    </ul>
+  </details>
 </section>
 
 <section class="card">
@@ -40,17 +42,11 @@
   {% else %}
     {% for match in finished_matches %}
       <article class="match-row">
-        <h4>{{ match.round_label }} · {{ match.home_team }} {{ match.home_score }} : {{ match.away_score }} {{ match.away_team }}</h4>
+        <h4>{{ match.conference_label }} · {{ match.round_label }} · {{ match.home_team }} {{ match.home_score }} : {{ match.away_score }} {{ match.away_team }}</h4>
         <ul>
           {% for prediction in match.predictions %}
             {% set details = score_details(prediction) %}
-            <li>
-              {{ prediction.user.username }}: {{ prediction.predicted_home }}:{{ prediction.predicted_away }}
-              → {{ details.total }} очк. (база {{ details.base }} × {{ details.weight }})
-              {% if details.components %}
-                [{{ details.components | join(', ') }}]
-              {% endif %}
-            </li>
+            <li>{{ prediction.user.username }}: {{ prediction.predicted_home }}:{{ prediction.predicted_away }} → {{ details.total }} очк.</li>
           {% endfor %}
         </ul>
       </article>

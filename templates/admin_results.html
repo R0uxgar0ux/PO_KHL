@@ -1,13 +1,14 @@
 {% extends 'base.html' %}
 {% block content %}
 <h2>Панель внесения результатов</h2>
-<p>Эта страница доступна пользователю <code>admin</code> для фиксации итоговых счетов матчей.</p>
+<p>Админ может заносить итоговые счета матчей.</p>
 
 <div class="grid">
 {% for match in matches %}
   <section class="card">
     <h3>{{ match.home_team }} — {{ match.away_team }}</h3>
-    <p><strong>Стадия:</strong> {{ round_labels.get(match.round_code, match.round_code) }}</p>
+    <p><strong>Конференция:</strong> {{ conference_labels.get(match.conference, match.conference) }}</p>
+    <p><strong>Стадия:</strong> {{ match.round_label }}</p>
     <p>Текущий итог: {% if match.is_finished %}{{ match.home_score }} : {{ match.away_score }}{% else %}еще не задан{% endif %}</p>
     <form method="post" class="prediction-form">
       <input type="hidden" name="match_id" value="{{ match.id }}" />

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
-import os
 
 from flask import Flask, flash, redirect, render_template, request, session, url_for
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import text
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -14,10 +15,10 @@ DB_PATH = Path(os.getenv("DB_PATH", BASE_DIR / "khl_playoff.db"))
 db = SQLAlchemy()
 
 ROUND_WEIGHTS = {
-    "R1": 1.0,  # 1/8 финала
-    "QF": 1.25,  # 1/4 финала
-    "SF": 1.6,  # 1/2 финала
-    "F": 2.2,  # Финал
+    "R1": 1.0,
+    "QF": 1.25,
+    "SF": 1.6,
+    "F": 2.2,
 }
 
 ROUND_LABELS = {
@@ -25,6 +26,11 @@ ROUND_LABELS = {
     "QF": "1/4 финала",
     "SF": "1/2 финала",
     "F": "Финал",
+}
+
+CONFERENCE_LABELS = {
+    "W": "Запад",
+    "E": "Восток",
 }
 
 
@@ -43,6 +49,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     with app.app_context():
         db.create_all()
+        ensure_schema_compatibility()
         seed_matches()
 
     register_routes(app)
@@ -53,6 +60,10 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
+    is_admin = db.Column(db.Boolean, nullable=False, default=False)
+    display_name = db.Column(db.String(120), nullable=False, default="")
+    favorite_team = db.Column(db.String(120), nullable=False, default="Авангард")
+    bio = db.Column(db.String(255), nullable=False, default="")
 
 
 class Match(db.Model):
@@ -60,6 +71,7 @@ class Match(db.Model):
     home_team = db.Column(db.String(120), nullable=False)
     away_team = db.Column(db.String(120), nullable=False)
     kickoff = db.Column(db.DateTime, nullable=False)
+    conference = db.Column(db.String(1), nullable=False, default="W")
     round_code = db.Column(db.String(8), nullable=False, default="R1")
     home_score = db.Column(db.Integer)
     away_score = db.Column(db.Integer)
@@ -71,6 +83,10 @@ class Match(db.Model):
     @property
     def round_label(self) -> str:
         return ROUND_LABELS.get(self.round_code, self.round_code)
+
+    @property
+    def conference_label(self) -> str:
+        return CONFERENCE_LABELS.get(self.conference, self.conference)
 
 
 class Prediction(db.Model):
@@ -86,15 +102,35 @@ class Prediction(db.Model):
     __table_args__ = (db.UniqueConstraint("user_id", "match_id", name="uq_user_match"),)
 
 
+def ensure_schema_compatibility() -> None:
+    inspector = db.inspect(db.engine)
+    user_columns = {col["name"] for col in inspector.get_columns("user")}
+    match_columns = {col["name"] for col in inspector.get_columns("match")}
+
+    if "is_admin" not in user_columns:
+        db.session.execute(text("ALTER TABLE user ADD COLUMN is_admin BOOLEAN DEFAULT 0"))
+    if "display_name" not in user_columns:
+        db.session.execute(text("ALTER TABLE user ADD COLUMN display_name VARCHAR(120) DEFAULT ''"))
+    if "favorite_team" not in user_columns:
+        db.session.execute(text("ALTER TABLE user ADD COLUMN favorite_team VARCHAR(120) DEFAULT 'Авангард'"))
+    if "bio" not in user_columns:
+        db.session.execute(text("ALTER TABLE user ADD COLUMN bio VARCHAR(255) DEFAULT ''"))
+
+    if "conference" not in match_columns:
+        db.session.execute(text("ALTER TABLE match ADD COLUMN conference VARCHAR(1) DEFAULT 'W'"))
+
+    db.session.commit()
+
+
 def seed_matches() -> None:
     if Match.query.count() > 0:
         return
 
     matches = [
-        Match(home_team="СКА", away_team="Локомотив", kickoff=datetime(2026, 3, 15, 19, 30), round_code="R1"),
-        Match(home_team="Металлург", away_team="Авангард", kickoff=datetime(2026, 3, 16, 17, 0), round_code="QF"),
-        Match(home_team="Ак Барс", away_team="Салават Юлаев", kickoff=datetime(2026, 3, 16, 19, 30), round_code="SF"),
-        Match(home_team="ЦСКА", away_team="Трактор", kickoff=datetime(2026, 4, 5, 19, 0), round_code="F"),
+        Match(home_team="СКА", away_team="Локомотив", kickoff=datetime(2026, 3, 15, 19, 30), conference="W", round_code="R1"),
+        Match(home_team="Динамо М", away_team="Спартак", kickoff=datetime(2026, 3, 16, 17, 0), conference="W", round_code="R1"),
+        Match(home_team="Металлург", away_team="Авангард", kickoff=datetime(2026, 3, 16, 19, 30), conference="E", round_code="R1"),
+        Match(home_team="Ак Барс", away_team="Салават Юлаев", kickoff=datetime(2026, 3, 17, 18, 0), conference="E", round_code="R1"),
     ]
     db.session.add_all(matches)
     db.session.commit()
@@ -108,30 +144,19 @@ def current_user() -> User | None:
 
 
 def _sign(value: int) -> int:
-    if value > 0:
-        return 1
-    if value < 0:
-        return -1
-    return 0
+    return 1 if value > 0 else -1 if value < 0 else 0
 
 
 def score_details(prediction: Prediction) -> dict:
     match = prediction.match
     if not match.is_finished:
-        return {
-            "total": 0,
-            "weight": ROUND_WEIGHTS.get(match.round_code, 1.0),
-            "base": 0,
-            "components": [],
-        }
+        return {"total": 0, "weight": ROUND_WEIGHTS.get(match.round_code, 1.0), "base": 0, "components": []}
 
     pred_home, pred_away = prediction.predicted_home, prediction.predicted_away
     real_home, real_away = match.home_score, match.away_score
 
-    pred_diff = pred_home - pred_away
-    real_diff = real_home - real_away
-    pred_total = pred_home + pred_away
-    real_total = real_home + real_away
+    pred_diff, real_diff = pred_home - pred_away, real_home - real_away
+    pred_total, real_total = pred_home + pred_away, real_home + real_away
 
     components: list[str] = []
     base_points = 0
@@ -139,34 +164,22 @@ def score_details(prediction: Prediction) -> dict:
     if _sign(pred_diff) == _sign(real_diff):
         base_points += 2
         components.append("угадан исход")
-
     if pred_diff == real_diff:
         base_points += 2
         components.append("угадана разница шайб")
-
     if pred_total == real_total:
         base_points += 1
         components.append("угадана сумма шайб")
-
-    exact_score = pred_home == real_home and pred_away == real_away
-    if exact_score:
+    if pred_home == real_home and pred_away == real_away:
         base_points += 4
         components.append("точный счет")
-
-    # Риск-бонус: за смелые ставки с 7+ шайб при совпавшем тренде по тоталу
     if pred_total >= 7 and real_total >= 7 and abs(pred_total - real_total) <= 1:
         base_points += 1
         components.append("бонус за высокий тотал")
 
     weight = ROUND_WEIGHTS.get(match.round_code, 1.0)
     total = int(round(base_points * weight))
-
-    return {
-        "total": total,
-        "weight": weight,
-        "base": base_points,
-        "components": components,
-    }
+    return {"total": total, "weight": weight, "base": base_points, "components": components}
 
 
 def score_prediction(prediction: Prediction) -> int:
@@ -175,18 +188,34 @@ def score_prediction(prediction: Prediction) -> int:
 
 def leaderboard() -> list[dict]:
     result = []
-    for user in User.query.order_by(User.username).all():
-        predictions = user.predictions
-        points = sum(score_prediction(prediction) for prediction in predictions)
-        exact_hits = 0
-        for prediction in predictions:
-            match = prediction.match
-            if match.is_finished and prediction.predicted_home == match.home_score and prediction.predicted_away == match.away_score:
-                exact_hits += 1
-
-        result.append({"username": user.username, "points": points, "exact_hits": exact_hits})
+    users = User.query.order_by(User.username).all()
+    for user in users:
+        points = sum(score_prediction(prediction) for prediction in user.predictions)
+        exact_hits = sum(
+            1
+            for prediction in user.predictions
+            if prediction.match.is_finished
+            and prediction.predicted_home == prediction.match.home_score
+            and prediction.predicted_away == prediction.match.away_score
+        )
+        result.append({"username": user.username, "points": points, "exact_hits": exact_hits, "user_id": user.id})
 
     return sorted(result, key=lambda item: (item["points"], item["exact_hits"], item["username"]), reverse=True)
+
+
+def user_rank(user_id: int) -> int:
+    board = leaderboard()
+    for idx, row in enumerate(board, start=1):
+        if row["user_id"] == user_id:
+            return idx
+    return len(board)
+
+
+def group_matches_by_conference(matches: list[Match]) -> dict[str, list[Match]]:
+    grouped = {"W": [], "E": []}
+    for match in matches:
+        grouped.setdefault(match.conference, []).append(match)
+    return grouped
 
 
 def register_routes(app: Flask) -> None:
@@ -196,9 +225,7 @@ def register_routes(app: Flask) -> None:
 
     @app.get("/")
     def index():
-        if not current_user():
-            return redirect(url_for("login"))
-        return redirect(url_for("cabinet"))
+        return redirect(url_for("login" if not current_user() else "cabinet"))
 
     @app.route("/register", methods=["GET", "POST"])
     def register():
@@ -209,12 +236,16 @@ def register_routes(app: Flask) -> None:
             if not username or not password:
                 flash("Введите логин и пароль")
                 return redirect(url_for("register"))
-
             if User.query.filter_by(username=username).first():
                 flash("Такой пользователь уже существует")
                 return redirect(url_for("register"))
 
-            user = User(username=username, password_hash=generate_password_hash(password))
+            user = User(
+                username=username,
+                password_hash=generate_password_hash(password),
+                display_name=username,
+                is_admin=(request.form.get("admin_key") == os.getenv("ADMIN_KEY", "OMSK")),
+            )
             db.session.add(user)
             db.session.commit()
             flash("Регистрация завершена. Войдите в аккаунт")
@@ -228,14 +259,11 @@ def register_routes(app: Flask) -> None:
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
             user = User.query.filter_by(username=username).first()
-
             if not user or not check_password_hash(user.password_hash, password):
                 flash("Неверный логин или пароль")
                 return redirect(url_for("login"))
-
             session["user_id"] = user.id
             return redirect(url_for("cabinet"))
-
         return render_template("login.html")
 
     @app.post("/logout")
@@ -250,6 +278,40 @@ def register_routes(app: Flask) -> None:
             return redirect(url_for("login"))
 
         if request.method == "POST":
+            user.display_name = request.form.get("display_name", user.display_name).strip() or user.username
+            user.favorite_team = request.form.get("favorite_team", user.favorite_team).strip() or "Авангард"
+            user.bio = request.form.get("bio", user.bio).strip()
+            db.session.commit()
+            flash("Профиль обновлен")
+            return redirect(url_for("cabinet"))
+
+        points = sum(score_prediction(prediction) for prediction in user.predictions)
+        rank = user_rank(user.id)
+        total_users = User.query.count()
+        predictions_count = len(user.predictions)
+        exact_hits = sum(
+            1
+            for prediction in user.predictions
+            if prediction.match.is_finished
+            and prediction.predicted_home == prediction.match.home_score
+            and prediction.predicted_away == prediction.match.away_score
+        )
+        return render_template(
+            "cabinet.html",
+            points=points,
+            rank=rank,
+            total_users=total_users,
+            predictions_count=predictions_count,
+            exact_hits=exact_hits,
+        )
+
+    @app.route("/predictions", methods=["GET", "POST"])
+    def predictions():
+        user = current_user()
+        if not user:
+            return redirect(url_for("login"))
+
+        if request.method == "POST":
             match_id = int(request.form["match_id"])
             predicted_home = int(request.form["predicted_home"])
             predicted_away = int(request.form["predicted_away"])
@@ -257,7 +319,7 @@ def register_routes(app: Flask) -> None:
             match = Match.query.get_or_404(match_id)
             if match.is_finished:
                 flash("Нельзя менять прогноз после окончания матча")
-                return redirect(url_for("cabinet"))
+                return redirect(url_for("predictions"))
 
             prediction = Prediction.query.filter_by(user_id=user.id, match_id=match_id).first()
             if prediction:
@@ -265,25 +327,27 @@ def register_routes(app: Flask) -> None:
                 prediction.predicted_away = predicted_away
                 flash("Прогноз обновлен")
             else:
-                prediction = Prediction(
-                    user_id=user.id,
-                    match_id=match_id,
-                    predicted_home=predicted_home,
-                    predicted_away=predicted_away,
+                db.session.add(
+                    Prediction(
+                        user_id=user.id,
+                        match_id=match_id,
+                        predicted_home=predicted_home,
+                        predicted_away=predicted_away,
+                    )
                 )
-                db.session.add(prediction)
                 flash("Прогноз сохранен")
-
             db.session.commit()
-            return redirect(url_for("cabinet"))
+            return redirect(url_for("predictions"))
 
         matches = Match.query.order_by(Match.kickoff).all()
+        grouped_matches = group_matches_by_conference(matches)
         prediction_by_match = {p.match_id: p for p in user.predictions}
         return render_template(
-            "cabinet.html",
-            matches=matches,
+            "predictions.html",
+            grouped_matches=grouped_matches,
             prediction_by_match=prediction_by_match,
             round_weights=ROUND_WEIGHTS,
+            conference_labels=CONFERENCE_LABELS,
         )
 
     @app.get("/results")
@@ -300,10 +364,7 @@ def register_routes(app: Flask) -> None:
             finished_matches=finished_matches,
             board=board,
             user_points=user_points,
-            score_prediction=score_prediction,
             score_details=score_details,
-            round_weights=ROUND_WEIGHTS,
-            round_labels=ROUND_LABELS,
         )
 
     @app.route("/admin/results", methods=["GET", "POST"])
@@ -311,25 +372,62 @@ def register_routes(app: Flask) -> None:
         user = current_user()
         if not user:
             return redirect(url_for("login"))
-
-        if user.username != "admin":
-            flash("Доступ только для admin")
+        if not user.is_admin:
+            flash("Доступ только для администраторов")
             return redirect(url_for("cabinet"))
 
         if request.method == "POST":
-            match_id = int(request.form["match_id"])
-            home_score = int(request.form["home_score"])
-            away_score = int(request.form["away_score"])
-
-            match = Match.query.get_or_404(match_id)
-            match.home_score = home_score
-            match.away_score = away_score
+            match = Match.query.get_or_404(int(request.form["match_id"]))
+            match.home_score = int(request.form["home_score"])
+            match.away_score = int(request.form["away_score"])
             db.session.commit()
             flash("Результат сохранен")
             return redirect(url_for("admin_results"))
 
         matches = Match.query.order_by(Match.kickoff).all()
-        return render_template("admin_results.html", matches=matches, round_labels=ROUND_LABELS)
+        return render_template("admin_results.html", matches=matches, conference_labels=CONFERENCE_LABELS)
+
+    @app.route("/admin/matches", methods=["GET", "POST"])
+    def admin_matches():
+        user = current_user()
+        if not user:
+            return redirect(url_for("login"))
+        if not user.is_admin:
+            flash("Доступ только для администраторов")
+            return redirect(url_for("cabinet"))
+
+        if request.method == "POST":
+            home_team = request.form.get("home_team", "").strip()
+            away_team = request.form.get("away_team", "").strip()
+            kickoff_raw = request.form.get("kickoff", "")
+            conference = request.form.get("conference", "W")
+            round_code = request.form.get("round_code", "R1")
+
+            if not home_team or not away_team or not kickoff_raw:
+                flash("Заполните все поля пары")
+                return redirect(url_for("admin_matches"))
+
+            kickoff = datetime.strptime(kickoff_raw, "%Y-%m-%dT%H:%M")
+            db.session.add(
+                Match(
+                    home_team=home_team,
+                    away_team=away_team,
+                    kickoff=kickoff,
+                    conference=conference,
+                    round_code=round_code,
+                )
+            )
+            db.session.commit()
+            flash("Пара добавлена")
+            return redirect(url_for("admin_matches"))
+
+        matches = Match.query.order_by(Match.kickoff).all()
+        return render_template(
+            "admin_matches.html",
+            matches=matches,
+            conference_labels=CONFERENCE_LABELS,
+            round_labels=ROUND_LABELS,
+        )
 
 
 app = create_app()

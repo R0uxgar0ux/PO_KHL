@@ -9,6 +9,9 @@
     <label>Пароль
       <input type="password" name="password" required />
     </label>
+    <label>Код администратора (необязательно)
+      <input type="password" name="admin_key" placeholder="Только для админ-прав" />
+    </label>
     <button type="submit">Создать аккаунт</button>
   </form>
   <p>Уже есть аккаунт? <a href="{{ url_for('login') }}">Войти</a></p>

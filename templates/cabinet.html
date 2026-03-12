@@ -1,39 +1,36 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2>Личный кабинет: {{ current_user.username }}</h2>
-<p>Сохраняйте прогнозы и учитывайте вес стадии плей-офф: чем ближе к финалу, тем больше очков.</p>
+<h2>Личный кабинет</h2>
+<p>Здесь ваш профиль, статистика и место в рейтинге. Прогнозы — на отдельной странице «Текущие прогнозы».</p>
 
-<div class="card">
-  <h3>Веса стадий</h3>
-  <ul>
-    {% for code, weight in round_weights.items() %}
-      <li>{{ code }}: x{{ weight }}</li>
-    {% endfor %}
-  </ul>
-</div>
-
-<div class="grid">
-{% for match in matches %}
+<div class="grid two">
   <section class="card">
-    <h3>{{ match.home_team }} — {{ match.away_team }}</h3>
-    <p><strong>Стадия:</strong> {{ match.round_label }}</p>
-    <p>Начало: {{ match.kickoff.strftime('%d.%m.%Y %H:%M') }}</p>
-    {% if match.is_finished %}
-      <p class="result">Итог: {{ match.home_score }} : {{ match.away_score }}</p>
-    {% endif %}
-
-    {% set prediction = prediction_by_match.get(match.id) %}
+    <h3>Профиль</h3>
     <form method="post" class="prediction-form">
-      <input type="hidden" name="match_id" value="{{ match.id }}" />
-      <label>{{ match.home_team }}
-        <input type="number" min="0" name="predicted_home" value="{{ prediction.predicted_home if prediction else 0 }}" {% if match.is_finished %}disabled{% endif %} required />
+      <label>Отображаемое имя
+        <input type="text" name="display_name" value="{{ current_user.display_name }}" required />
       </label>
-      <label>{{ match.away_team }}
-        <input type="number" min="0" name="predicted_away" value="{{ prediction.predicted_away if prediction else 0 }}" {% if match.is_finished %}disabled{% endif %} required />
+      <label>Любимый клуб
+        <input type="text" name="favorite_team" value="{{ current_user.favorite_team }}" />
       </label>
-      <button type="submit" {% if match.is_finished %}disabled{% endif %}>Сохранить прогноз</button>
+      <label>О себе
+        <input type="text" name="bio" value="{{ current_user.bio }}" placeholder="Например: Омск с детства" />
+      </label>
+      <button type="submit">Сохранить профиль</button>
     </form>
   </section>
-{% endfor %}
+
+  <section class="card">
+    <h3>Статистика</h3>
+    <ul>
+      <li><strong>Логин:</strong> {{ current_user.username }}</li>
+      <li><strong>Роль:</strong> {% if current_user.is_admin %}Администратор{% else %}Участник{% endif %}</li>
+      <li><strong>Очки:</strong> {{ points }}</li>
+      <li><strong>Место в таблице:</strong> {{ rank }} из {{ total_users }}</li>
+      <li><strong>Прогнозов сделано:</strong> {{ predictions_count }}</li>
+      <li><strong>Точных счетов:</strong> {{ exact_hits }}</li>
+    </ul>
+    <p class="fun-note">🏒 Факт: если любимая команда — «Авангард», моральный бонус +100 к настроению 🙂</p>
+  </section>
 </div>
 {% endblock %}

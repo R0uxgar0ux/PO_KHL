@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Пары плей-офф (админ)</h2>
+<p>Здесь задаются пары матчей, их конференция и стадия.</p>
+
+<section class="card">
+  <h3>Добавить пару</h3>
+  <form method="post" class="prediction-form">
+    <label>Хозяева
+      <input type="text" name="home_team" required />
+    </label>
+    <label>Гости
+      <input type="text" name="away_team" required />
+    </label>
+    <label>Начало
+      <input type="datetime-local" name="kickoff" required />
+    </label>
+    <label>Конференция
+      <select name="conference">
+        {% for code, label in conference_labels.items() %}
+          <option value="{{ code }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Стадия
+      <select name="round_code">
+        {% for code, label in round_labels.items() %}
+          <option value="{{ code }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Добавить матч</button>
+  </form>
+</section>
+
+<section class="card">
+  <h3>Текущие пары</h3>
+  <table>
+    <thead>
+      <tr><th>Конференция</th><th>Стадия</th><th>Матч</th><th>Дата</th></tr>
+    </thead>
+    <tbody>
+      {% for m in matches %}
+      <tr>
+        <td>{{ conference_labels.get(m.conference, m.conference) }}</td>
+        <td>{{ round_labels.get(m.round_code, m.round_code) }}</td>
+        <td>{{ m.home_team }} — {{ m.away_team }}</td>
+        <td>{{ m.kickoff.strftime('%d.%m.%Y %H:%M') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
