@@ -38,7 +38,7 @@ python app.py
 На сервере (с установленными Docker и Docker Compose):
 
 ```bash
-git clone <your_repo_url>
+git clone https://github.com/R0uxgar0ux/PO_KHL.git
 cd PO_KHL
 docker compose up -d --build
 ```
