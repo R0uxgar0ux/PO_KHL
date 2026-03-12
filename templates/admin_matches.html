@@ -6,6 +6,7 @@
 <section class="card">
   <h3>Добавить пару</h3>
   <form method="post" class="prediction-form">
+    <input type="hidden" name="action" value="create" />
     <label>Хозяева
       <input type="text" name="home_team" required />
     </label>
@@ -37,7 +38,7 @@
   <h3>Текущие пары</h3>
   <table>
     <thead>
-      <tr><th>Конференция</th><th>Стадия</th><th>Матч</th><th>Дата</th></tr>
+      <tr><th>Конференция</th><th>Стадия</th><th>Матч</th><th>Дата</th><th>Действия</th></tr>
     </thead>
     <tbody>
       {% for m in matches %}
@@ -46,6 +47,13 @@
         <td>{{ round_labels.get(m.round_code, m.round_code) }}</td>
         <td>{{ m.home_team }} — {{ m.away_team }}</td>
         <td>{{ m.kickoff.strftime('%d.%m.%Y %H:%M') }}</td>
+        <td>
+          <form method="post" class="inline-form" onsubmit="return confirm('Удалить эту пару?');">
+            <input type="hidden" name="action" value="delete" />
+            <input type="hidden" name="match_id" value="{{ m.id }}" />
+            <button type="submit" class="danger">Удалить</button>
+          </form>
+        </td>
       </tr>
       {% endfor %}
     </tbody>

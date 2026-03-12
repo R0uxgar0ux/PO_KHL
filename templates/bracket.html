@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Дерево плей-офф</h2>
+<p>Наглядное отображение счетов по сериям. Данные считаются по внесенным матчам.</p>
+
+{% for conf in ['W', 'E'] %}
+<section class="card">
+  <h3>{{ conference_labels[conf] }}</h3>
+  <div class="bracket-grid">
+    {% for r in round_order %}
+      <div class="bracket-col">
+        <h4>{{ round_labels[r] }}</h4>
+        {% for series in bracket[conf][r] %}
+          <article class="series-card">
+            <p><strong>{{ series.team_a }}</strong> {{ series.wins.get(series.team_a, 0) }} : {{ series.wins.get(series.team_b, 0) }} <strong>{{ series.team_b }}</strong></p>
+            <ul>
+              {% for game in series.games %}
+                <li>
+                  {{ game.kickoff.strftime('%d.%m') }} · {{ game.home_team }}
+                  {% if game.is_finished %}
+                    {{ game.home_score }}:{{ game.away_score }}
+                  {% else %}
+                    —:-
+                  {% endif %}
+                  {{ game.away_team }}
+                </li>
+              {% endfor %}
+            </ul>
+          </article>
+        {% else %}
+          <p class="muted">Нет серий</p>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+{% endblock %}

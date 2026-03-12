@@ -70,5 +70,5 @@ def test_leaderboard_tiebreak_exact_hits():
         db.session.commit()
 
         board = leaderboard()
-        assert board[0]["username"] == "alice"
+        assert board[0]["display_name"] == "alice"
         assert board[0]["exact_hits"] == 1

@@ -147,3 +147,41 @@ summary {
   color: #444;
   font-style: italic;
 }
+
+
+button.danger {
+  background: #111;
+}
+
+button.danger:hover {
+  background: #2b2b2b;
+}
+
+.bracket-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.bracket-col {
+  background: #fcfcfc;
+  border: 1px solid #ececec;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.series-card {
+  border-left: 3px solid #d70912;
+  background: #fff;
+  padding: 8px;
+  margin-bottom: 10px;
+}
+
+.series-card ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+
+.muted {
+  color: #777;
+}
