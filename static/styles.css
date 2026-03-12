@@ -185,3 +185,88 @@ button.danger:hover {
 .muted {
   color: #777;
 }
+
+
+.compact-header {
+  padding: 12px 20px;
+}
+
+.brand {
+  font-size: 22px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.top-nav {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.top-nav a {
+  margin-right: 0;
+  font-size: 16px;
+}
+
+.mini-btn {
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+.admin-link {
+  text-decoration: none;
+  color: #111;
+  font-weight: 700;
+}
+
+
+.playoff-like .bracket-col h3 {
+  margin-top: 0;
+  border-bottom: 1px solid #dcdcdc;
+  padding-bottom: 6px;
+}
+
+.scoreboard {
+  border-left: none;
+  border: 1px solid #d7dbe2;
+  padding: 0;
+  overflow: hidden;
+}
+
+.team-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.team-row:last-child {
+  border-bottom: none;
+}
+
+.team-row.winner {
+  background: #001f3a;
+  color: #fff;
+}
+
+.round-table th,
+.round-table td {
+  text-align: center;
+}
+
+.round-table td:first-child,
+.round-table td:nth-child(2),
+.round-table th:first-child,
+.round-table th:nth-child(2) {
+  text-align: left;
+}
+
+.team-name {
+  white-space: nowrap;
+}
+
+.winner-text {
+  font-weight: 700;
+}

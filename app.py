@@ -53,6 +53,22 @@ class User(db.Model):
     bio = db.Column(db.String(255), nullable=False, default="")
 
 
+class PlayoffSeries(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    team_a = db.Column(db.String(120), nullable=False)
+    team_b = db.Column(db.String(120), nullable=False)
+    conference = db.Column(db.String(1), nullable=False, default="W")
+    round_code = db.Column(db.String(8), nullable=False, default="R1")
+
+    @property
+    def conference_label(self) -> str:
+        return CONFERENCE_LABELS.get(self.conference, self.conference)
+
+    @property
+    def round_label(self) -> str:
+        return ROUND_LABELS.get(self.round_code, self.round_code)
+
+
 class Match(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     home_team = db.Column(db.String(120), nullable=False)
@@ -60,8 +76,11 @@ class Match(db.Model):
     kickoff = db.Column(db.DateTime, nullable=False)
     conference = db.Column(db.String(1), nullable=False, default="W")
     round_code = db.Column(db.String(8), nullable=False, default="R1")
+    series_id = db.Column(db.Integer, db.ForeignKey("playoff_series.id"))
     home_score = db.Column(db.Integer)
     away_score = db.Column(db.Integer)
+
+    series = db.relationship("PlayoffSeries", backref=db.backref("matches", lazy=True))
 
     @property
     def is_finished(self) -> bool:
@@ -104,27 +123,32 @@ def ensure_schema_compatibility() -> None:
         db.session.execute(text("ALTER TABLE user ADD COLUMN favorite_team VARCHAR(120) DEFAULT 'Авангард'"))
     if "bio" not in user_columns:
         db.session.execute(text("ALTER TABLE user ADD COLUMN bio VARCHAR(255) DEFAULT ''"))
+
     if "conference" not in match_columns:
         db.session.execute(text("ALTER TABLE match ADD COLUMN conference VARCHAR(1) DEFAULT 'W'"))
+    if "series_id" not in match_columns:
+        db.session.execute(text("ALTER TABLE match ADD COLUMN series_id INTEGER"))
 
     db.session.commit()
 
-    users = User.query.all()
-    for user in users:
+    for user in User.query.all():
         if not user.display_name:
             user.display_name = user.username
     db.session.commit()
 
 
 def seed_matches() -> None:
-    if Match.query.count() > 0:
+    if Match.query.count() > 0 or PlayoffSeries.query.count() > 0:
         return
 
+    s1 = PlayoffSeries(team_a="СКА", team_b="Локомотив", conference="W", round_code="R1")
+    s2 = PlayoffSeries(team_a="Металлург", team_b="Авангард", conference="E", round_code="R1")
+    db.session.add_all([s1, s2])
+    db.session.flush()
+
     matches = [
-        Match(home_team="СКА", away_team="Локомотив", kickoff=datetime(2026, 3, 15, 19, 30), conference="W", round_code="R1"),
-        Match(home_team="Динамо М", away_team="Спартак", kickoff=datetime(2026, 3, 16, 17, 0), conference="W", round_code="R1"),
-        Match(home_team="Металлург", away_team="Авангард", kickoff=datetime(2026, 3, 16, 19, 30), conference="E", round_code="R1"),
-        Match(home_team="Ак Барс", away_team="Салават Юлаев", kickoff=datetime(2026, 3, 17, 18, 0), conference="E", round_code="R1"),
+        Match(home_team="СКА", away_team="Локомотив", kickoff=datetime(2026, 3, 15, 19, 30), conference="W", round_code="R1", series_id=s1.id),
+        Match(home_team="Металлург", away_team="Авангард", kickoff=datetime(2026, 3, 16, 19, 30), conference="E", round_code="R1", series_id=s2.id),
     ]
     db.session.add_all(matches)
     db.session.commit()
@@ -219,32 +243,71 @@ def group_matches_by_conference(matches: list[Match]) -> dict[str, list[Match]]:
 
 def build_bracket_data() -> dict:
     data: dict[str, dict[str, list[dict]]] = {"W": defaultdict(list), "E": defaultdict(list)}
-    matches = Match.query.order_by(Match.kickoff).all()
+    round_order = ["R1", "QF", "SF", "F"]
+    round_prefix = {"R1": "EF", "QF": "QF", "SF": "SF", "F": "F"}
 
-    for conference in ("W", "E"):
-        conf_matches = [m for m in matches if m.conference == conference]
-        series_map: dict[tuple[str, str, str], dict] = {}
-        for m in conf_matches:
-            teams = tuple(sorted([m.home_team, m.away_team]))
-            key = (m.round_code, teams[0], teams[1])
-            if key not in series_map:
-                series_map[key] = {
-                    "round_code": m.round_code,
-                    "team_a": teams[0],
-                    "team_b": teams[1],
-                    "wins": {teams[0]: 0, teams[1]: 0},
-                    "games": [],
-                }
-            series = series_map[key]
-            if m.is_finished:
-                winner = m.home_team if m.home_score > m.away_score else m.away_team if m.away_score > m.home_score else None
-                if winner:
-                    series["wins"][winner] = series["wins"].get(winner, 0) + 1
-            series["games"].append(m)
+    # Подробные данные серий + табличный вид по раундам
+    round_rows: dict[str, list[dict]] = {code: [] for code in round_order}
+    round_idx: dict[str, int] = {code: 1 for code in round_order}
 
-        for series in series_map.values():
-            data[conference][series["round_code"]].append(series)
+    for series in PlayoffSeries.query.order_by(PlayoffSeries.round_code, PlayoffSeries.conference, PlayoffSeries.id).all():
+        wins = {series.team_a: 0, series.team_b: 0}
+        goals = {series.team_a: 0, series.team_b: 0}
+        game_cols_a = ["" for _ in range(7)]
+        game_cols_b = ["" for _ in range(7)]
+        games = sorted(series.matches, key=lambda m: m.kickoff)
 
+        for idx, game in enumerate(games[:7]):
+            if not game.is_finished:
+                continue
+
+            # счет в перспективе team_a / team_b
+            if game.home_team == series.team_a:
+                a_goals, b_goals = game.home_score, game.away_score
+            else:
+                a_goals, b_goals = game.away_score, game.home_score
+
+            game_cols_a[idx] = f"{a_goals}:{b_goals}"
+            game_cols_b[idx] = f"{b_goals}:{a_goals}"
+            goals[series.team_a] += a_goals
+            goals[series.team_b] += b_goals
+
+            if a_goals > b_goals:
+                wins[series.team_a] += 1
+            elif b_goals > a_goals:
+                wins[series.team_b] += 1
+
+        winner = series.team_a if wins[series.team_a] >= wins[series.team_b] else series.team_b
+
+        data[series.conference][series.round_code].append(
+            {
+                "team_a": series.team_a,
+                "team_b": series.team_b,
+                "wins": wins,
+                "games": games,
+                "winner": winner,
+            }
+        )
+
+        label = f"{round_prefix.get(series.round_code, series.round_code)}{round_idx[series.round_code]}"
+        round_idx[series.round_code] += 1
+        round_rows[series.round_code].append(
+            {
+                "label": label,
+                "team_a": series.team_a,
+                "team_b": series.team_b,
+                "games_a": game_cols_a,
+                "games_b": game_cols_b,
+                "wins_a": wins[series.team_a],
+                "wins_b": wins[series.team_b],
+                "goals_a": goals[series.team_a],
+                "goals_b": goals[series.team_b],
+                "winner": winner,
+            }
+        )
+
+    data["round_rows"] = round_rows
+    data["round_order"] = round_order
     return data
 
 
@@ -273,12 +336,7 @@ def register_routes(app: Flask) -> None:
                 return redirect(url_for("register"))
 
             is_admin = request.form.get("admin_key") == os.getenv("ADMIN_KEY", "OMSK")
-            user = User(
-                username=username,
-                password_hash=generate_password_hash(password),
-                display_name=username,
-                is_admin=is_admin,
-            )
+            user = User(username=username, password_hash=generate_password_hash(password), display_name=username, is_admin=is_admin)
             db.session.add(user)
             db.session.commit()
             flash("Регистрация завершена. Войдите в аккаунт")
@@ -403,13 +461,22 @@ def register_routes(app: Flask) -> None:
         user = current_user()
         if not user:
             return redirect(url_for("login"))
+        bracket_data = build_bracket_data()
         return render_template(
             "bracket.html",
-            bracket=build_bracket_data(),
+            bracket=bracket_data,
             conference_labels=CONFERENCE_LABELS,
             round_labels=ROUND_LABELS,
-            round_order=["R1", "QF", "SF", "F"],
+            round_order=bracket_data["round_order"],
+            round_rows=bracket_data["round_rows"],
         )
+
+    @app.get("/admin")
+    def admin_home():
+        user = current_user()
+        if not user or not user.is_admin:
+            return redirect(url_for("cabinet"))
+        return render_template("admin_home.html")
 
     @app.route("/admin/results", methods=["GET", "POST"])
     def admin_results():
@@ -441,32 +508,73 @@ def register_routes(app: Flask) -> None:
             return redirect(url_for("cabinet"))
 
         if request.method == "POST":
-            action = request.form.get("action", "create")
-            if action == "delete":
+            action = request.form.get("action", "create_series")
+
+            if action == "delete_match":
                 match = Match.query.get_or_404(int(request.form["match_id"]))
                 Prediction.query.filter_by(match_id=match.id).delete()
                 db.session.delete(match)
                 db.session.commit()
-                flash("Пара удалена")
+                flash("Матч удален")
                 return redirect(url_for("admin_matches"))
 
-            home_team = request.form.get("home_team", "").strip()
-            away_team = request.form.get("away_team", "").strip()
-            kickoff_raw = request.form.get("kickoff", "")
-            conference = request.form.get("conference", "W")
-            round_code = request.form.get("round_code", "R1")
-            if not home_team or not away_team or not kickoff_raw:
-                flash("Заполните все поля пары")
+            if action == "delete_series":
+                series = PlayoffSeries.query.get_or_404(int(request.form["series_id"]))
+                for match in series.matches:
+                    Prediction.query.filter_by(match_id=match.id).delete()
+                    db.session.delete(match)
+                db.session.delete(series)
+                db.session.commit()
+                flash("Серия удалена")
                 return redirect(url_for("admin_matches"))
 
-            kickoff = datetime.strptime(kickoff_raw, "%Y-%m-%dT%H:%M")
-            db.session.add(Match(home_team=home_team, away_team=away_team, kickoff=kickoff, conference=conference, round_code=round_code))
-            db.session.commit()
-            flash("Пара добавлена")
-            return redirect(url_for("admin_matches"))
+            if action == "create_series":
+                team_a = request.form.get("team_a", "").strip()
+                team_b = request.form.get("team_b", "").strip()
+                conference = request.form.get("conference", "W")
+                round_code = request.form.get("round_code", "R1")
+                if not team_a or not team_b:
+                    flash("Заполните команды серии")
+                    return redirect(url_for("admin_matches"))
+                db.session.add(PlayoffSeries(team_a=team_a, team_b=team_b, conference=conference, round_code=round_code))
+                db.session.commit()
+                flash("Серия добавлена")
+                return redirect(url_for("admin_matches"))
 
+            if action == "add_game":
+                series = PlayoffSeries.query.get_or_404(int(request.form["series_id"]))
+                kickoff_raw = request.form.get("kickoff", "")
+                host_side = request.form.get("host_side", "A")
+                if not kickoff_raw:
+                    flash("Укажите дату и время матча (МСК)")
+                    return redirect(url_for("admin_matches"))
+
+                kickoff = datetime.strptime(kickoff_raw, "%Y-%m-%dT%H:%M")
+                home_team = series.team_a if host_side == "A" else series.team_b
+                away_team = series.team_b if host_side == "A" else series.team_a
+                db.session.add(
+                    Match(
+                        home_team=home_team,
+                        away_team=away_team,
+                        kickoff=kickoff,
+                        conference=series.conference,
+                        round_code=series.round_code,
+                        series_id=series.id,
+                    )
+                )
+                db.session.commit()
+                flash("Матч в серии добавлен")
+                return redirect(url_for("admin_matches"))
+
+        series_list = PlayoffSeries.query.order_by(PlayoffSeries.round_code, PlayoffSeries.id).all()
         matches = Match.query.order_by(Match.kickoff).all()
-        return render_template("admin_matches.html", matches=matches, conference_labels=CONFERENCE_LABELS, round_labels=ROUND_LABELS)
+        return render_template(
+            "admin_matches.html",
+            series_list=series_list,
+            matches=matches,
+            conference_labels=CONFERENCE_LABELS,
+            round_labels=ROUND_LABELS,
+        )
 
     @app.route("/admin/users", methods=["GET", "POST"])
     def admin_users():

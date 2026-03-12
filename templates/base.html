@@ -7,21 +7,19 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
 </head>
 <body>
-  <header class="header">
-    <h1>Авангард · Прогнозы ПО КХЛ</h1>
-    <nav>
+  <header class="header compact-header">
+    <div class="brand">Авангард · ПО КХЛ</div>
+    <nav class="top-nav">
       {% if current_user %}
-        <a href="{{ url_for('cabinet') }}">Личный кабинет</a>
-        <a href="{{ url_for('predictions') }}">Текущие прогнозы</a>
-        <a href="{{ url_for('results') }}">Текущие результаты</a>
-        <a href="{{ url_for('bracket') }}">Дерево ПО</a>
+        <a href="{{ url_for('cabinet') }}">Кабинет</a>
+        <a href="{{ url_for('predictions') }}">Прогнозы</a>
+        <a href="{{ url_for('results') }}">Результаты</a>
+        <a href="{{ url_for('bracket') }}">Дерево</a>
         {% if current_user.is_admin %}
-          <a href="{{ url_for('admin_results') }}">Результаты матчей</a>
-          <a href="{{ url_for('admin_matches') }}">Пары ПО</a>
-          <a href="{{ url_for('admin_users') }}">Пользователи</a>
+          <a href="{{ url_for('admin_home') }}">Админка</a>
         {% endif %}
         <form method="post" action="{{ url_for('logout') }}" class="inline-form">
-          <button type="submit">Выйти</button>
+          <button type="submit" class="mini-btn">Выйти</button>
         </form>
       {% endif %}
     </nav>

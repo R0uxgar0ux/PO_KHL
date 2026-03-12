@@ -19,7 +19,7 @@
     <section class="card">
       <h4>{{ match.home_team }} — {{ match.away_team }}</h4>
       <p><strong>Стадия:</strong> {{ match.round_label }}</p>
-      <p>Начало: {{ match.kickoff.strftime('%d.%m.%Y %H:%M') }}</p>
+      <p>Начало: {{ match.kickoff.strftime('%d.%m.%Y %H:%M') }} МСК</p>
       {% if match.is_finished %}
         <p class="result">Итог: {{ match.home_score }} : {{ match.away_score }}</p>
       {% endif %}

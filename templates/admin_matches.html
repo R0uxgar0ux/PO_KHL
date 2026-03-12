@@ -1,20 +1,17 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2>Пары плей-офф (админ)</h2>
-<p>Здесь задаются пары матчей, их конференция и стадия.</p>
+<h2>Серии плей-офф (админ)</h2>
+<p>1) Быстро создайте серию (пару). 2) Ниже добавляйте в неё матчи с датой/временем <strong>МСК</strong>.</p>
 
 <section class="card">
-  <h3>Добавить пару</h3>
+  <h3>Шаг 1: Создать серию</h3>
   <form method="post" class="prediction-form">
-    <input type="hidden" name="action" value="create" />
-    <label>Хозяева
-      <input type="text" name="home_team" required />
+    <input type="hidden" name="action" value="create_series" />
+    <label>Команда A
+      <input type="text" name="team_a" required />
     </label>
-    <label>Гости
-      <input type="text" name="away_team" required />
-    </label>
-    <label>Начало
-      <input type="datetime-local" name="kickoff" required />
+    <label>Команда B
+      <input type="text" name="team_b" required />
     </label>
     <label>Конференция
       <select name="conference">
@@ -30,28 +27,76 @@
         {% endfor %}
       </select>
     </label>
-    <button type="submit">Добавить матч</button>
+    <button type="submit">Создать серию</button>
   </form>
 </section>
 
 <section class="card">
-  <h3>Текущие пары</h3>
+  <h3>Шаг 2: Добавить матч в серию (время МСК)</h3>
+  <form method="post" class="prediction-form">
+    <input type="hidden" name="action" value="add_game" />
+    <label>Серия
+      <select name="series_id" required>
+        {% for s in series_list %}
+          <option value="{{ s.id }}">{{ s.conference_label }} · {{ s.round_label }} · {{ s.team_a }} — {{ s.team_b }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Кто хозяин
+      <select name="host_side">
+        <option value="A">Команда A (первая)</option>
+        <option value="B">Команда B (вторая)</option>
+      </select>
+    </label>
+    <label>Дата и время матча (МСК)
+      <input type="datetime-local" name="kickoff" required />
+    </label>
+    <button type="submit">Добавить матч в серию</button>
+  </form>
+</section>
+
+<section class="card">
+  <h3>Текущие серии</h3>
   <table>
     <thead>
-      <tr><th>Конференция</th><th>Стадия</th><th>Матч</th><th>Дата</th><th>Действия</th></tr>
+      <tr><th>Конференция</th><th>Стадия</th><th>Серия</th><th>Действия</th></tr>
+    </thead>
+    <tbody>
+      {% for s in series_list %}
+      <tr>
+        <td>{{ s.conference_label }}</td>
+        <td>{{ s.round_label }}</td>
+        <td>{{ s.team_a }} — {{ s.team_b }}</td>
+        <td>
+          <form method="post" class="inline-form" onsubmit="return confirm('Удалить серию и все матчи в ней?');">
+            <input type="hidden" name="action" value="delete_series" />
+            <input type="hidden" name="series_id" value="{{ s.id }}" />
+            <button type="submit" class="danger">Удалить серию</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h3>Матчи в сериях</h3>
+  <table>
+    <thead>
+      <tr><th>Серия</th><th>Матч</th><th>Дата/время (МСК)</th><th>Действия</th></tr>
     </thead>
     <tbody>
       {% for m in matches %}
       <tr>
-        <td>{{ conference_labels.get(m.conference, m.conference) }}</td>
-        <td>{{ round_labels.get(m.round_code, m.round_code) }}</td>
+        <td>{% if m.series %}{{ m.series.team_a }} — {{ m.series.team_b }}{% else %}—{% endif %}</td>
         <td>{{ m.home_team }} — {{ m.away_team }}</td>
         <td>{{ m.kickoff.strftime('%d.%m.%Y %H:%M') }}</td>
         <td>
-          <form method="post" class="inline-form" onsubmit="return confirm('Удалить эту пару?');">
-            <input type="hidden" name="action" value="delete" />
+          <form method="post" class="inline-form" onsubmit="return confirm('Удалить матч?');">
+            <input type="hidden" name="action" value="delete_match" />
             <input type="hidden" name="match_id" value="{{ m.id }}" />
-            <button type="submit" class="danger">Удалить</button>
+            <button type="submit" class="danger">Удалить матч</button>
           </form>
         </td>
       </tr>
