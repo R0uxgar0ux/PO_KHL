@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Прогнозы на серии</h2>
+<p>Серия играется до 4 побед (максимум 7 матчей). Сначала задайте итог серии, после этого заполните исходы только нужного числа матчей.</p>
+
+{% for conference_code in ['W', 'E'] %}
+  <h3 class="conference-title">{{ conference_labels[conference_code] }}</h3>
+  <div class="grid">
+  {% for series in series_list if series.conference == conference_code %}
+    <section class="card">
+      <h4>{{ series.team_a }} — {{ series.team_b }}</h4>
+      <p><strong>Стадия:</strong> {{ round_labels.get(series.round_code, series.round_code) }}</p>
+      <p><strong>Дедлайн прогноза:</strong>
+        {% if series.prediction_deadline %}
+          {{ series.prediction_deadline.strftime('%d.%m.%Y %H:%M') }} МСК
+        {% else %}
+          не задан
+        {% endif %}
+      </p>
+
+      {% set prediction = prediction_by_series.get(series.id) %}
+      {% set is_closed = series.prediction_deadline and now > series.prediction_deadline %}
+
+      <form method="post" class="prediction-form series-form" data-series-id="{{ series.id }}">
+        <input type="hidden" name="series_id" value="{{ series.id }}" />
+
+        <div class="grid two">
+          <label>{{ series.team_a }} (побед в серии)
+            <input type="number" min="0" max="4" name="predicted_wins_a" value="{{ prediction.predicted_wins_a if prediction else 4 }}" {% if is_closed %}disabled{% endif %} required />
+          </label>
+          <label>{{ series.team_b }} (побед в серии)
+            <input type="number" min="0" max="4" name="predicted_wins_b" value="{{ prediction.predicted_wins_b if prediction else 1 }}" {% if is_closed %}disabled{% endif %} required />
+          </label>
+        </div>
+
+        <div class="games-block" data-games-block>
+          {% set outcomes = prediction.game_outcomes.split(',') if prediction and prediction.game_outcomes else [] %}
+          {% for i in range(1, 8) %}
+            <label class="game-row" data-game-row>
+              Исход матча {{ i }}
+              <select name="game_outcomes" {% if is_closed %}disabled{% endif %}>
+                <option value="A" {% if outcomes|length >= i and outcomes[i-1] == 'A' %}selected{% endif %}>Победа {{ series.team_a }}</option>
+                <option value="B" {% if outcomes|length >= i and outcomes[i-1] == 'B' %}selected{% endif %}>Победа {{ series.team_b }}</option>
+              </select>
+            </label>
+          {% endfor %}
+        </div>
+
+        {% if is_closed %}
+          <p class="muted">Дедлайн прошел — прогноз закрыт.</p>
+        {% endif %}
+        <button type="submit" {% if is_closed %}disabled{% endif %}>Сохранить прогноз на серию</button>
+      </form>
+    </section>
+  {% else %}
+    <p>Пока нет серий в этой конференции.</p>
+  {% endfor %}
+  </div>
+{% endfor %}
+
+<script>
+  function updateSeriesForm(form) {
+    const aInput = form.querySelector('input[name="predicted_wins_a"]');
+    const bInput = form.querySelector('input[name="predicted_wins_b"]');
+    const rows = form.querySelectorAll('[data-game-row]');
+    if (!aInput || !bInput) return;
+
+    const a = parseInt(aInput.value || '0', 10);
+    const b = parseInt(bInput.value || '0', 10);
+    let games = a + b;
+    if (games < 0) games = 0;
+    if (games > 7) games = 7;
+
+    rows.forEach((row, idx) => {
+      const visible = idx < games;
+      row.style.display = visible ? '' : 'none';
+      const select = row.querySelector('select');
+      if (select) select.disabled = !visible;
+    });
+  }
+
+  document.querySelectorAll('.series-form').forEach((form) => {
+    form.querySelectorAll('input[name="predicted_wins_a"], input[name="predicted_wins_b"]').forEach((input) => {
+      input.addEventListener('input', () => updateSeriesForm(form));
+    });
+    updateSeriesForm(form);
+  });
+</script>
+{% endblock %}
