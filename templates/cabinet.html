@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Личный кабинет: {{ current_user.username }}</h2>
+<p>Сохраняйте прогнозы и учитывайте вес стадии плей-офф: чем ближе к финалу, тем больше очков.</p>
+
+<div class="card">
+  <h3>Веса стадий</h3>
+  <ul>
+    {% for code, weight in round_weights.items() %}
+      <li>{{ code }}: x{{ weight }}</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="grid">
+{% for match in matches %}
+  <section class="card">
+    <h3>{{ match.home_team }} — {{ match.away_team }}</h3>
+    <p><strong>Стадия:</strong> {{ match.round_label }}</p>
+    <p>Начало: {{ match.kickoff.strftime('%d.%m.%Y %H:%M') }}</p>
+    {% if match.is_finished %}
+      <p class="result">Итог: {{ match.home_score }} : {{ match.away_score }}</p>
+    {% endif %}
+
+    {% set prediction = prediction_by_match.get(match.id) %}
+    <form method="post" class="prediction-form">
+      <input type="hidden" name="match_id" value="{{ match.id }}" />
+      <label>{{ match.home_team }}
+        <input type="number" min="0" name="predicted_home" value="{{ prediction.predicted_home if prediction else 0 }}" {% if match.is_finished %}disabled{% endif %} required />
+      </label>
+      <label>{{ match.away_team }}
+        <input type="number" min="0" name="predicted_away" value="{{ prediction.predicted_away if prediction else 0 }}" {% if match.is_finished %}disabled{% endif %} required />
+      </label>
+      <button type="submit" {% if match.is_finished %}disabled{% endif %}>Сохранить прогноз</button>
+    </form>
+  </section>
+{% endfor %}
+</div>
+{% endblock %}
