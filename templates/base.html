@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Прогнозы ПО КХЛ</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+<body>
+  <header class="header">
+    <h1>Авангард · Прогнозы ПО КХЛ</h1>
+    <nav>
+      {% if current_user %}
+        <a href="{{ url_for('cabinet') }}">Личный кабинет</a>
+        <a href="{{ url_for('predictions') }}">Текущие прогнозы</a>
+        <a href="{{ url_for('results') }}">Текущие результаты</a>
+        <a href="{{ url_for('bracket') }}">Дерево ПО</a>
+        {% if current_user.is_admin %}
+          <a href="{{ url_for('admin_results') }}">Результаты матчей</a>
+          <a href="{{ url_for('admin_matches') }}">Пары ПО</a>
+          <a href="{{ url_for('admin_users') }}">Пользователи</a>
+        {% endif %}
+        <form method="post" action="{{ url_for('logout') }}" class="inline-form">
+          <button type="submit">Выйти</button>
+        </form>
+      {% endif %}
+    </nav>
+  </header>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <ul class="messages">
+      {% for message in messages %}
+        <li>{{ message }}</li>
+      {% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
