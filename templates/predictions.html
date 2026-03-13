@@ -10,37 +10,40 @@
     {% set prediction = prediction_by_series.get(series.id) %}
     {% set is_closed = series.prediction_deadline and now > series.prediction_deadline %}
     {% set saved_scores = prediction.game_scores.split(',') if prediction and prediction.game_scores else [] %}
-    <section class="card series-card-modern">
-      <header class="series-head">
-        <h4>
-          <span class="team-name-wrap">{{ series.team_a }}</span>
-          <span class="series-dash">—</span>
-          <span class="team-name-wrap">{{ series.team_b }}</span>
-        </h4>
-        <div class="series-meta">
-          <span class="round-pill">{{ round_labels.get(series.round_code, series.round_code) }}</span>
-          <span class="muted">Дедлайн: {% if series.prediction_deadline %}{{ series.prediction_deadline.strftime('%d.%m.%Y %H:%M') }} МСК{% else %}не задан{% endif %}</span>
-        </div>
-      </header>
 
-      <form method="post" class="prediction-form series-form" data-series-id="{{ series.id }}">
+    <section class="card series-card-modern series-card-wide">
+      <form method="post" class="prediction-form series-form series-form-horizontal" data-series-id="{{ series.id }}">
         <input type="hidden" name="series_id" value="{{ series.id }}" />
 
-        <label>Счёт серии</label>
-        <div class="scoreline-row improved">
-          <span class="team-name-wrap">{{ series.team_a }}</span>
-          <select name="predicted_wins_a" data-wins-a {% if is_closed %}disabled{% endif %}>
-            {% for n in range(0,5) %}
-              <option value="{{ n }}" {% if prediction and prediction.predicted_wins_a == n %}selected{% elif not prediction and n==4 %}selected{% endif %}>{{ n }}</option>
-            {% endfor %}
-          </select>
-          <strong>:</strong>
-          <select name="predicted_wins_b" data-wins-b {% if is_closed %}disabled{% endif %}>
-            {% for n in range(0,5) %}
-              <option value="{{ n }}" {% if prediction and prediction.predicted_wins_b == n %}selected{% elif not prediction and n==2 %}selected{% endif %}>{{ n }}</option>
-            {% endfor %}
-          </select>
-          <span class="team-name-wrap">{{ series.team_b }}</span>
+        <div class="series-head-row">
+          <h4>
+            <span class="team-name-wrap">{{ series.team_a }}</span>
+            <span class="series-dash">—</span>
+            <span class="team-name-wrap">{{ series.team_b }}</span>
+          </h4>
+          <div class="series-meta">
+            <span class="round-pill">{{ round_labels.get(series.round_code, series.round_code) }}</span>
+            <span class="muted">Дедлайн: {% if series.prediction_deadline %}{{ series.prediction_deadline.strftime('%d.%m.%Y %H:%M') }} МСК{% else %}не задан{% endif %}</span>
+          </div>
+        </div>
+
+        <div class="scoreline-block">
+          <label>Счёт серии</label>
+          <div class="scoreline-row improved">
+            <span class="team-name-wrap">{{ series.team_a }}</span>
+            <select name="predicted_wins_a" data-wins-a {% if is_closed %}disabled{% endif %}>
+              {% for n in range(0,5) %}
+                <option value="{{ n }}" {% if prediction and prediction.predicted_wins_a == n %}selected{% elif not prediction and n==4 %}selected{% endif %}>{{ n }}</option>
+              {% endfor %}
+            </select>
+            <strong>:</strong>
+            <select name="predicted_wins_b" data-wins-b {% if is_closed %}disabled{% endif %}>
+              {% for n in range(0,5) %}
+                <option value="{{ n }}" {% if prediction and prediction.predicted_wins_b == n %}selected{% elif not prediction and n==2 %}selected{% endif %}>{{ n }}</option>
+              {% endfor %}
+            </select>
+            <span class="team-name-wrap">{{ series.team_b }}</span>
+          </div>
         </div>
 
         <div class="match-score-grid" data-games-block>
