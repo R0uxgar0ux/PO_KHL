@@ -1,22 +1,24 @@
 {% extends 'base.html' %}
 {% block content %}
 <h2>Панель внесения результатов</h2>
-<p>Форма повторяет прогнозы по сериям: задайте итог серии и точные счета матчей. После сохранения таблица результатов и очки участников пересчитываются автоматически.</p>
+<p>Форма повторяет прогнозы по сериям: итог серии и точные счета матчей. Ниже есть кнопки блокировки прогноза по каждому матчу.</p>
 
 {% for conference_code in ['W', 'E'] %}
   <h3 class="conference-title">{{ conference_labels[conference_code] }}</h3>
   <div class="series-grid">
   {% for series in series_list if series.conference == conference_code %}
     {% set result = results_by_series.get(series.id, {'wins_a': 4, 'wins_b': 2, 'scores': []}) %}
+    {% set locked_games = locked_games_by_series.get(series.id, []) %}
     <section class="card series-card-modern series-card-wide">
       <form method="post" class="prediction-form series-form series-form-horizontal" data-series-id="{{ series.id }}">
         <input type="hidden" name="series_id" value="{{ series.id }}" />
+        <input type="hidden" name="action" value="save_results" />
 
         <div class="series-head-row">
           <h4>
-            <span class="team-name-wrap">{{ series.team_a }}</span>
+            <span class="team-name-wrap"><span class="team-name-with-logo"><img class="team-logo" src="{{ team_logo_url(series.team_a) }}" alt="" loading="lazy" /><span>{{ series.team_a }}</span></span></span>
             <span class="series-dash">—</span>
-            <span class="team-name-wrap">{{ series.team_b }}</span>
+            <span class="team-name-wrap"><span class="team-name-with-logo"><img class="team-logo" src="{{ team_logo_url(series.team_b) }}" alt="" loading="lazy" /><span>{{ series.team_b }}</span></span></span>
           </h4>
           <div class="series-meta">
             <span class="round-pill">{{ round_labels.get(series.round_code, series.round_code) }}</span>
@@ -27,7 +29,7 @@
         <div class="scoreline-block">
           <label>Итог серии</label>
           <div class="scoreline-row improved">
-            <span class="team-name-wrap">{{ series.team_a }}</span>
+            <span class="team-name-wrap"><span class="team-name-with-logo"><img class="team-logo" src="{{ team_logo_url(series.team_a) }}" alt="" loading="lazy" /><span>{{ series.team_a }}</span></span></span>
             <select name="wins_a" data-wins-a>
               {% for n in range(0,5) %}
                 <option value="{{ n }}" {% if result.wins_a == n %}selected{% endif %}>{{ n }}</option>
@@ -39,7 +41,7 @@
                 <option value="{{ n }}" {% if result.wins_b == n %}selected{% endif %}>{{ n }}</option>
               {% endfor %}
             </select>
-            <span class="team-name-wrap">{{ series.team_b }}</span>
+            <span class="team-name-wrap"><span class="team-name-with-logo"><img class="team-logo" src="{{ team_logo_url(series.team_b) }}" alt="" loading="lazy" /><span>{{ series.team_b }}</span></span></span>
           </div>
         </div>
 
@@ -59,6 +61,20 @@
 
         <button type="submit">Сохранить результаты серии</button>
       </form>
+
+      <div class="lock-buttons-row">
+        {% for i in range(1, 8) %}
+          {% set is_locked_game = i in locked_games %}
+          <form method="post" class="inline-form">
+            <input type="hidden" name="action" value="toggle_lock" />
+            <input type="hidden" name="series_id" value="{{ series.id }}" />
+            <input type="hidden" name="game_index" value="{{ i }}" />
+            <button type="submit" class="mini-btn {% if is_locked_game %}danger{% endif %}">
+              {% if is_locked_game %}🔓 Матч {{ i }}{% else %}🔒 Матч {{ i }}{% endif %}
+            </button>
+          </form>
+        {% endfor %}
+      </div>
     </section>
   {% else %}
     <p>Пока нет серий в этой конференции.</p>
@@ -99,9 +115,6 @@
     rows.forEach((row, idx) => {
       const visible = idx < games;
       row.style.display = visible ? 'grid' : 'none';
-      row.querySelectorAll('input').forEach((input) => {
-        input.disabled = !visible;
-      });
     });
   }
 

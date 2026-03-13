@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from app import PlayoffSeries, SeriesPrediction, User, create_app, db, leaderboard, score_series_prediction
+from app import PlayoffSeries, SeriesPrediction, User, create_app, db, leaderboard, score_series_prediction, validate_outcomes_sequence
 
 
 def make_app():
@@ -100,3 +100,131 @@ def test_leaderboard_uses_series_predictions():
 
         board = leaderboard()
         assert board[0]["display_name"] == "alice"
+
+
+def test_predictions_page_uses_current_user_data_only():
+    app = make_app()
+    with app.app_context():
+        u1 = User(username="u1x", password_hash="x", display_name="u1x")
+        u2 = User(username="u2x", password_hash="x", display_name="u2x")
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="R1")
+        db.session.add_all([u1, u2, series])
+        db.session.flush()
+        db.session.add(
+            SeriesPrediction(
+                user_id=u1.id,
+                series_id=series.id,
+                predicted_wins_a=4,
+                predicted_wins_b=3,
+                game_outcomes="A,B,A,B,A,B,A",
+                game_scores="1:0,0:1,2:1,1:2,3:2,2:3,1:0",
+            )
+        )
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = u2.id
+            response = client.get("/predictions")
+            html = response.get_data(as_text=True)
+            assert "Ваш прогноз ещё не сохранён" in html
+
+
+def test_predictions_post_redirects_to_same_series_anchor():
+    app = make_app()
+    with app.app_context():
+        user = User(username="u3x", password_hash="x", display_name="u3x")
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="R1")
+        db.session.add_all([user, series])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = user.id
+
+            response = client.post(
+                "/predictions",
+                data={
+                    "series_id": str(series.id),
+                    "predicted_wins_a": "4",
+                    "predicted_wins_b": "1",
+                    "game_home_scores": ["1", "2", "0", "2", "1"],
+                    "game_away_scores": ["0", "1", "1", "1", "0"],
+                },
+                follow_redirects=False,
+            )
+
+            assert response.status_code == 302
+            assert response.headers["Location"].endswith(f"/predictions#series-{series.id}")
+
+
+def test_validate_outcomes_sequence_stops_after_four_wins():
+    ok, _ = validate_outcomes_sequence(["A", "A", "A", "A", "B"], 4, 1)
+    assert not ok
+
+
+def test_r1_predictions_accept_series_only_without_match_scores():
+    app = make_app()
+    with app.app_context():
+        user = User(username="u4x", password_hash="x", display_name="u4x")
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="R1")
+        db.session.add_all([user, series])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = user.id
+
+            response = client.post(
+                "/predictions",
+                data={
+                    "series_id": str(series.id),
+                    "predicted_wins_a": "4",
+                    "predicted_wins_b": "1",
+                },
+                follow_redirects=False,
+            )
+            assert response.status_code == 302
+            saved = SeriesPrediction.query.filter_by(user_id=user.id, series_id=series.id).first()
+            assert saved is not None
+            assert saved.game_scores == ""
+
+
+def test_locked_match_cannot_be_changed_in_detailed_round():
+    app = make_app()
+    with app.app_context():
+        admin = User(username="adm", password_hash="x", display_name="adm", is_admin=True)
+        user = User(username="u5x", password_hash="x", display_name="u5x")
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="SF", locked_game_indices="1")
+        db.session.add_all([admin, user, series])
+        db.session.flush()
+        db.session.add(
+            SeriesPrediction(
+                user_id=user.id,
+                series_id=series.id,
+                predicted_wins_a=4,
+                predicted_wins_b=1,
+                game_outcomes="A,A,B,A,A",
+                game_scores="1:0,2:1,0:1,2:1,1:0",
+            )
+        )
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = user.id
+
+            response = client.post(
+                "/predictions",
+                data={
+                    "series_id": str(series.id),
+                    "predicted_wins_a": "4",
+                    "predicted_wins_b": "1",
+                    "game_home_scores": ["2", "2", "0", "2", "1"],
+                    "game_away_scores": ["0", "1", "1", "1", "0"],
+                },
+                follow_redirects=False,
+            )
+            assert response.status_code == 302
+            saved = SeriesPrediction.query.filter_by(user_id=user.id, series_id=series.id).first()
+            assert saved.game_scores.startswith("1:0")

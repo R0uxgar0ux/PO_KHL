@@ -172,6 +172,22 @@ button.danger:hover { background: #2b2b2b; }
   word-break: break-word;
 }
 
+.team-name-with-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.team-logo {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #fff;
+}
+
 .series-meta {
   display: flex;
   justify-content: space-between;
@@ -242,6 +258,13 @@ button.danger:hover { background: #2b2b2b; }
 .match-score-inputs input {
   width: 100%;
   min-width: 0;
+}
+
+.lock-buttons-row {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 @media (max-width: 900px) {
   .brand { font-size: 24px; }

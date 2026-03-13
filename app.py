@@ -20,7 +20,68 @@ ROUND_WEIGHTS = {"R1": 1.0, "QF": 1.25, "SF": 1.6, "F": 2.2}
 ROUND_LABELS = {"R1": "1/8 финала", "QF": "1/4 финала", "SF": "1/2 финала", "F": "Финал"}
 CONFERENCE_LABELS = {"W": "Запад", "E": "Восток"}
 LOGIN_RE = re.compile(r"^[a-zA-Z0-9_]{3,24}$")
+DETAILED_ROUNDS = {"SF", "F"}
 
+TEAM_LOGO_URLS = {
+    "Авангард": "https://upload.wikimedia.org/wikipedia/ru/thumb/2/23/Avangard_Omsk_logo.svg/120px-Avangard_Omsk_logo.svg.png",
+    "СКА": "https://upload.wikimedia.org/wikipedia/ru/thumb/3/3f/SKA_Saint_Petersburg_logo.svg/120px-SKA_Saint_Petersburg_logo.svg.png",
+    "Локомотив": "https://upload.wikimedia.org/wikipedia/ru/thumb/9/9c/HC_Lokomotiv_logo.svg/120px-HC_Lokomotiv_logo.svg.png",
+    "Металлург": "https://upload.wikimedia.org/wikipedia/ru/thumb/3/3e/Metallurg_Magnitogorsk_logo.svg/120px-Metallurg_Magnitogorsk_logo.svg.png",
+    "Динамо М": "https://upload.wikimedia.org/wikipedia/ru/thumb/f/fb/HCDynamoMoscowlogo.svg/120px-HCDynamoMoscowlogo.svg.png",
+    "Динамо Мн": "https://upload.wikimedia.org/wikipedia/ru/thumb/4/43/HC_Dinamo_Minsk_logo.svg/120px-HC_Dinamo_Minsk_logo.svg.png",
+    "ЦСКА": "https://upload.wikimedia.org/wikipedia/ru/thumb/9/9f/CSKA_Moscow_logo.svg/120px-CSKA_Moscow_logo.svg.png",
+    "Спартак": "https://upload.wikimedia.org/wikipedia/ru/thumb/e/e4/Spartak_Moscow_logo.svg/120px-Spartak_Moscow_logo.svg.png",
+    "Северсталь": "https://upload.wikimedia.org/wikipedia/ru/thumb/6/67/Severstal_Cherepovets_logo.svg/120px-Severstal_Cherepovets_logo.svg.png",
+    "Торпедо": "https://upload.wikimedia.org/wikipedia/ru/thumb/8/87/Torpedo_Nizhny_Novgorod_logo.svg/120px-Torpedo_Nizhny_Novgorod_logo.svg.png",
+}
+
+
+def team_logo_url(team_name: str) -> str:
+    return TEAM_LOGO_URLS.get(team_name, "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Gray_cropped_hockey_puck.svg/120px-Gray_cropped_hockey_puck.svg.png")
+
+
+
+
+
+def detailed_predictions_enabled(round_code: str) -> bool:
+    return round_code in DETAILED_ROUNDS
+
+
+def parse_locked_games(serialized: str) -> set[int]:
+    result: set[int] = set()
+    for item in serialized.split(","):
+        value = item.strip()
+        if value.isdigit():
+            idx = int(value)
+            if 1 <= idx <= 7:
+                result.add(idx)
+    return result
+
+
+def serialize_locked_games(locked_games: set[int]) -> str:
+    return ",".join(str(idx) for idx in sorted(locked_games))
+
+
+def validate_outcomes_sequence(outcomes: list[str], wins_a: int, wins_b: int) -> tuple[bool, str]:
+    if outcomes.count("A") != wins_a or outcomes.count("B") != wins_b:
+        return False, "Победы по матчам должны совпадать с итоговым счетом серии"
+
+    a_wins = 0
+    b_wins = 0
+    for idx, outcome in enumerate(outcomes, start=1):
+        if outcome == "A":
+            a_wins += 1
+        elif outcome == "B":
+            b_wins += 1
+        else:
+            return False, "Некорректная последовательность исходов"
+
+        if idx < len(outcomes) and (a_wins == 4 or b_wins == 4):
+            return False, "Серия не может продолжаться после 4-й победы команды"
+
+    if a_wins != wins_a or b_wins != wins_b:
+        return False, "Победы по матчам должны совпадать с итоговым счетом серии"
+    return True, ""
 
 def create_app(test_config: dict | None = None) -> Flask:
     app = Flask(__name__)
@@ -60,6 +121,7 @@ class PlayoffSeries(db.Model):
     conference = db.Column(db.String(1), nullable=False, default="W")
     round_code = db.Column(db.String(8), nullable=False, default="R1")
     prediction_deadline = db.Column(db.DateTime)
+    locked_game_indices = db.Column(db.String(32), nullable=False, default="")
 
     @property
     def conference_label(self) -> str:
@@ -148,6 +210,8 @@ def ensure_schema_compatibility() -> None:
         db.session.execute(text("ALTER TABLE match ADD COLUMN series_id INTEGER"))
     if "prediction_deadline" not in series_columns:
         db.session.execute(text("ALTER TABLE playoff_series ADD COLUMN prediction_deadline DATETIME"))
+    if "locked_game_indices" not in series_columns:
+        db.session.execute(text("ALTER TABLE playoff_series ADD COLUMN locked_game_indices VARCHAR(32) DEFAULT ''"))
     if "game_scores" not in series_prediction_columns:
         db.session.execute(text("ALTER TABLE series_prediction ADD COLUMN game_scores VARCHAR(96) DEFAULT ''"))
 
@@ -453,7 +517,7 @@ def game_teams_by_index(series: PlayoffSeries, game_index: int) -> tuple[str, st
 def register_routes(app: Flask) -> None:
     @app.context_processor
     def inject_user():
-        return {"current_user": current_user()}
+        return {"current_user": current_user(), "team_logo_url": team_logo_url}
 
     @app.get("/")
     def index():
@@ -552,52 +616,75 @@ def register_routes(app: Flask) -> None:
         if request.method == "POST":
             series_id = int(request.form["series_id"])
             series = PlayoffSeries.query.get_or_404(series_id)
+            focus_url = f"{url_for('predictions')}#series-{series.id}"
 
             if series.prediction_deadline and datetime.now() > series.prediction_deadline:
                 flash("Дедлайн прогноза по серии уже прошел")
-                return redirect(url_for("predictions"))
+                return redirect(focus_url)
 
             wins_a = int(request.form["predicted_wins_a"])
             wins_b = int(request.form["predicted_wins_b"])
             if 4 not in (wins_a, wins_b):
                 flash("Серия играется до 4 побед — одна из команд должна иметь 4")
-                return redirect(url_for("predictions"))
+                return redirect(focus_url)
             if wins_a < 0 or wins_b < 0 or wins_a > 4 or wins_b > 4:
                 flash("Некорректный счет серии")
-                return redirect(url_for("predictions"))
+                return redirect(focus_url)
 
             games_count = wins_a + wins_b
             if games_count > 7:
                 flash("В серии максимум 7 матчей")
-                return redirect(url_for("predictions"))
+                return redirect(focus_url)
 
-            raw_home_scores = request.form.getlist("game_home_scores")[:games_count]
-            raw_away_scores = request.form.getlist("game_away_scores")[:games_count]
-            if len(raw_home_scores) != games_count or len(raw_away_scores) != games_count:
-                flash("Заполните точные счета всех матчей серии")
-                return redirect(url_for("predictions"))
-
-            game_scores: list[tuple[int, int]] = []
-            outcomes: list[str] = []
-            for idx, (raw_home, raw_away) in enumerate(zip(raw_home_scores, raw_away_scores), start=1):
-                if not raw_home.isdigit() or not raw_away.isdigit():
-                    flash(f"Матч {idx}: укажите счет неотрицательными числами")
-                    return redirect(url_for("predictions"))
-                home_score = int(raw_home)
-                away_score = int(raw_away)
-                if home_score == away_score:
-                    flash(f"Матч {idx}: в плей-офф не может быть ничьи")
-                    return redirect(url_for("predictions"))
-                game_scores.append((home_score, away_score))
-                outcomes.append("A" if home_score > away_score else "B")
-
-            if outcomes.count("A") != wins_a or outcomes.count("B") != wins_b:
-                flash("Победы по матчам должны совпадать с итоговым счетом серии")
-                return redirect(url_for("predictions"))
-
-            serialized = ",".join(outcomes)
-            serialized_scores = serialize_game_scores(game_scores)
             prediction = SeriesPrediction.query.filter_by(user_id=user.id, series_id=series.id).first()
+            detailed_enabled = detailed_predictions_enabled(series.round_code)
+
+            serialized = ""
+            serialized_scores = ""
+
+            if detailed_enabled:
+                raw_home_scores = request.form.getlist("game_home_scores")[:games_count]
+                raw_away_scores = request.form.getlist("game_away_scores")[:games_count]
+                if len(raw_home_scores) != games_count or len(raw_away_scores) != games_count:
+                    flash("Заполните точные счета всех матчей серии")
+                    return redirect(focus_url)
+
+                game_scores: list[tuple[int, int]] = []
+                outcomes: list[str] = []
+                locked_games = parse_locked_games(series.locked_game_indices)
+                existing_scores = parse_game_scores(prediction.game_scores) if prediction else []
+
+                for idx, (raw_home, raw_away) in enumerate(zip(raw_home_scores, raw_away_scores), start=1):
+                    if not raw_home.isdigit() or not raw_away.isdigit():
+                        flash(f"Матч {idx}: укажите счет неотрицательными числами")
+                        return redirect(focus_url)
+                    home_score = int(raw_home)
+                    away_score = int(raw_away)
+                    if home_score == away_score:
+                        flash(f"Матч {idx}: в плей-офф не может быть ничьи")
+                        return redirect(focus_url)
+
+                    if idx in locked_games:
+                        if idx <= len(existing_scores):
+                            prev_home, prev_away = existing_scores[idx - 1]
+                            if (home_score, away_score) != (prev_home, prev_away):
+                                flash(f"Матч {idx} заблокирован для редактирования")
+                                return redirect(focus_url)
+                        else:
+                            flash(f"Матч {idx} уже заблокирован для новых прогнозов")
+                            return redirect(focus_url)
+
+                    game_scores.append((home_score, away_score))
+                    outcomes.append("A" if home_score > away_score else "B")
+
+                valid_sequence, message = validate_outcomes_sequence(outcomes, wins_a, wins_b)
+                if not valid_sequence:
+                    flash(message)
+                    return redirect(focus_url)
+
+                serialized = ",".join(outcomes)
+                serialized_scores = serialize_game_scores(game_scores)
+
             if prediction:
                 prediction.predicted_wins_a = wins_a
                 prediction.predicted_wins_b = wins_b
@@ -617,14 +704,17 @@ def register_routes(app: Flask) -> None:
                 )
                 flash("Прогноз по серии сохранен")
             db.session.commit()
-            return redirect(url_for("predictions"))
+            return redirect(focus_url)
 
         series_list = PlayoffSeries.query.order_by(PlayoffSeries.round_code, PlayoffSeries.conference, PlayoffSeries.id).all()
         prediction_by_series = {p.series_id: p for p in user.series_predictions}
+        locked_games_by_series = {series.id: parse_locked_games(series.locked_game_indices) for series in series_list}
         return render_template(
             "predictions.html",
             series_list=series_list,
             prediction_by_series=prediction_by_series,
+            locked_games_by_series=locked_games_by_series,
+            detailed_rounds=DETAILED_ROUNDS,
             conference_labels=CONFERENCE_LABELS,
             round_labels=ROUND_LABELS,
             now=datetime.now(),
@@ -678,8 +768,25 @@ def register_routes(app: Flask) -> None:
             return redirect(url_for("cabinet"))
 
         if request.method == "POST":
+            action = request.form.get("action", "save_results")
             series_id = int(request.form["series_id"])
             series = PlayoffSeries.query.get_or_404(series_id)
+
+            if action == "toggle_lock":
+                game_index = int(request.form["game_index"])
+                if game_index < 1 or game_index > 7:
+                    flash("Некорректный номер матча")
+                    return redirect(url_for("admin_results"))
+                locked_games = parse_locked_games(series.locked_game_indices)
+                if game_index in locked_games:
+                    locked_games.remove(game_index)
+                    flash(f"Матч {game_index}: блокировка снята")
+                else:
+                    locked_games.add(game_index)
+                    flash(f"Матч {game_index}: прогноз заблокирован")
+                series.locked_game_indices = serialize_locked_games(locked_games)
+                db.session.commit()
+                return redirect(url_for("admin_results"))
 
             wins_a = int(request.form["wins_a"])
             wins_b = int(request.form["wins_b"])
@@ -715,8 +822,9 @@ def register_routes(app: Flask) -> None:
                 scores.append((home_score, away_score))
                 outcomes.append("A" if home_score > away_score else "B")
 
-            if outcomes.count("A") != wins_a or outcomes.count("B") != wins_b:
-                flash("Победы по матчам должны совпадать с итоговым счетом серии")
+            valid_sequence, message = validate_outcomes_sequence(outcomes, wins_a, wins_b)
+            if not valid_sequence:
+                flash(message)
                 return redirect(url_for("admin_results"))
 
             Match.query.filter_by(series_id=series.id).delete()
@@ -747,10 +855,12 @@ def register_routes(app: Flask) -> None:
 
         series_list = PlayoffSeries.query.order_by(PlayoffSeries.round_code, PlayoffSeries.conference, PlayoffSeries.id).all()
         results_by_series = {series.id: series_results_snapshot(series) for series in series_list}
+        locked_games_by_series = {series.id: parse_locked_games(series.locked_game_indices) for series in series_list}
         return render_template(
             "admin_results.html",
             series_list=series_list,
             results_by_series=results_by_series,
+            locked_games_by_series=locked_games_by_series,
             conference_labels=CONFERENCE_LABELS,
             round_labels=ROUND_LABELS,
         )
