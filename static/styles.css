@@ -1,0 +1,305 @@
+* {
+  box-sizing: border-box;
+  font-family: Arial, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #f7f7f7;
+  color: #111;
+}
+
+.header {
+  padding: 16px 24px;
+  background: #111;
+  color: #fff;
+  border-bottom: 4px solid #d70912;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.header a {
+  color: #fff;
+  margin-right: 12px;
+  text-decoration: none;
+}
+
+.header a:hover {
+  color: #ffb3b6;
+}
+
+.inline-form {
+  display: inline;
+}
+
+.container {
+  max-width: 1160px;
+  margin: 24px auto;
+  padding: 0 16px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e4e4e4;
+  border-left: 4px solid #d70912;
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05);
+  margin-bottom: 16px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.grid.two {
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+}
+
+.auth-form,
+.prediction-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+input,
+button,
+select {
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+}
+
+button {
+  border: none;
+  background: #d70912;
+  color: #fff;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #b8070f;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.messages {
+  max-width: 1160px;
+  margin: 16px auto;
+  list-style: none;
+  padding: 0 16px;
+}
+
+.messages li {
+  background: #ffe8e9;
+  border-left: 4px solid #d70912;
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.result {
+  font-weight: 700;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  border-bottom: 1px solid #eee;
+  padding: 8px;
+  text-align: left;
+}
+
+.match-row {
+  margin-bottom: 14px;
+}
+
+summary {
+  cursor: pointer;
+  color: #d70912;
+}
+
+.conference-title {
+  margin: 20px 0 8px;
+  padding-left: 8px;
+  border-left: 4px solid #111;
+}
+
+.fun-note {
+  color: #444;
+  font-style: italic;
+}
+
+
+button.danger {
+  background: #111;
+}
+
+button.danger:hover {
+  background: #2b2b2b;
+}
+
+.bracket-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.bracket-col {
+  background: #fcfcfc;
+  border: 1px solid #ececec;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.series-card {
+  border-left: 3px solid #d70912;
+  background: #fff;
+  padding: 8px;
+  margin-bottom: 10px;
+}
+
+.series-card ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+
+.muted {
+  color: #777;
+}
+
+
+.compact-header {
+  padding: 12px 20px;
+}
+
+.brand {
+  font-size: 22px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.top-nav {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.top-nav a {
+  margin-right: 0;
+  font-size: 16px;
+}
+
+.mini-btn {
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+.admin-link {
+  text-decoration: none;
+  color: #111;
+  font-weight: 700;
+}
+
+
+.playoff-like .bracket-col h3 {
+  margin-top: 0;
+  border-bottom: 1px solid #dcdcdc;
+  padding-bottom: 6px;
+}
+
+.scoreboard {
+  border-left: none;
+  border: 1px solid #d7dbe2;
+  padding: 0;
+  overflow: hidden;
+}
+
+.team-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.team-row:last-child {
+  border-bottom: none;
+}
+
+.team-row.winner {
+  background: #001f3a;
+  color: #fff;
+}
+
+.round-table th,
+.round-table td {
+  text-align: center;
+}
+
+.round-table td:first-child,
+.round-table td:nth-child(2),
+.round-table th:first-child,
+.round-table th:nth-child(2) {
+  text-align: left;
+}
+
+.team-name {
+  white-space: nowrap;
+}
+
+.winner-text {
+  font-weight: 700;
+}
+
+
+.compact-card h4 {
+  margin-bottom: 8px;
+}
+
+.scoreline-row {
+  display: grid;
+  grid-template-columns: 1fr 70px 20px 70px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.games-inline {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.game-chip {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  background: #fafafa;
+  border: 1px solid #ececec;
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.game-chip span {
+  font-size: 13px;
+  min-width: 58px;
+}
