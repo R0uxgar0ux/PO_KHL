@@ -511,8 +511,6 @@ def register_routes(app: Flask) -> None:
 
         if request.method == "POST":
             display_name = request.form.get("display_name", "").strip()
-            favorite_team = request.form.get("favorite_team", user.favorite_team).strip() or "Авангард"
-            bio = request.form.get("bio", user.bio).strip()
 
             if not is_valid_login(display_name):
                 flash("Отображаемое имя должно быть 3-24 символа: латиница, цифры и _")
@@ -524,8 +522,6 @@ def register_routes(app: Flask) -> None:
                 return redirect(url_for("cabinet"))
 
             user.display_name = display_name
-            user.favorite_team = favorite_team
-            user.bio = bio
             db.session.commit()
             flash("Профиль обновлен")
             return redirect(url_for("cabinet"))

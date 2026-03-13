@@ -10,12 +10,6 @@
       <label>Отображаемое имя
         <input type="text" name="display_name" value="{{ current_user.display_name }}" required />
       </label>
-      <label>Любимый клуб
-        <input type="text" name="favorite_team" value="{{ current_user.favorite_team }}" />
-      </label>
-      <label>О себе
-        <input type="text" name="bio" value="{{ current_user.bio }}" placeholder="Например: Омск с детства" />
-      </label>
       <button type="submit">Сохранить профиль</button>
     </form>
   </section>
@@ -30,7 +24,6 @@
       <li><strong>Прогнозов сделано:</strong> {{ predictions_count }}</li>
       <li><strong>Точных счетов серий:</strong> {{ exact_hits }}</li>
     </ul>
-    <p class="fun-note">🏒 Факт: если любимая команда — «Авангард», моральный бонус +100 к настроению 🙂</p>
   </section>
 </div>
 {% endblock %}
