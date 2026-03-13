@@ -22,22 +22,23 @@ CONFERENCE_LABELS = {"W": "Запад", "E": "Восток"}
 LOGIN_RE = re.compile(r"^[a-zA-Z0-9_]{3,24}$")
 DETAILED_ROUNDS = {"SF", "F"}
 
-TEAM_LOGO_URLS = {
-    "Авангард": "https://upload.wikimedia.org/wikipedia/ru/thumb/2/23/Avangard_Omsk_logo.svg/120px-Avangard_Omsk_logo.svg.png",
-    "СКА": "https://upload.wikimedia.org/wikipedia/ru/thumb/3/3f/SKA_Saint_Petersburg_logo.svg/120px-SKA_Saint_Petersburg_logo.svg.png",
-    "Локомотив": "https://upload.wikimedia.org/wikipedia/ru/thumb/9/9c/HC_Lokomotiv_logo.svg/120px-HC_Lokomotiv_logo.svg.png",
-    "Металлург": "https://upload.wikimedia.org/wikipedia/ru/thumb/3/3e/Metallurg_Magnitogorsk_logo.svg/120px-Metallurg_Magnitogorsk_logo.svg.png",
-    "Динамо М": "https://upload.wikimedia.org/wikipedia/ru/thumb/f/fb/HCDynamoMoscowlogo.svg/120px-HCDynamoMoscowlogo.svg.png",
-    "Динамо Мн": "https://upload.wikimedia.org/wikipedia/ru/thumb/4/43/HC_Dinamo_Minsk_logo.svg/120px-HC_Dinamo_Minsk_logo.svg.png",
-    "ЦСКА": "https://upload.wikimedia.org/wikipedia/ru/thumb/9/9f/CSKA_Moscow_logo.svg/120px-CSKA_Moscow_logo.svg.png",
-    "Спартак": "https://upload.wikimedia.org/wikipedia/ru/thumb/e/e4/Spartak_Moscow_logo.svg/120px-Spartak_Moscow_logo.svg.png",
-    "Северсталь": "https://upload.wikimedia.org/wikipedia/ru/thumb/6/67/Severstal_Cherepovets_logo.svg/120px-Severstal_Cherepovets_logo.svg.png",
-    "Торпедо": "https://upload.wikimedia.org/wikipedia/ru/thumb/8/87/Torpedo_Nizhny_Novgorod_logo.svg/120px-Torpedo_Nizhny_Novgorod_logo.svg.png",
+TEAM_LOGO_FILES = {
+    "Авангард": "team_logos/avangard.svg",
+    "СКА": "team_logos/ska.svg",
+    "Локомотив": "team_logos/lokomotiv.svg",
+    "Металлург": "team_logos/metallurg.svg",
+    "Динамо М": "team_logos/dynamo_moscow.svg",
+    "Динамо Мн": "team_logos/dynamo_minsk.svg",
+    "ЦСКА": "team_logos/cska.svg",
+    "Спартак": "team_logos/spartak.svg",
+    "Северсталь": "team_logos/severstal.svg",
+    "Торпедо": "team_logos/torpedo.svg",
 }
 
 
 def team_logo_url(team_name: str) -> str:
-    return TEAM_LOGO_URLS.get(team_name, "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Gray_cropped_hockey_puck.svg/120px-Gray_cropped_hockey_puck.svg.png")
+    filename = TEAM_LOGO_FILES.get(team_name, "team_logos/default.svg")
+    return url_for("static", filename=filename)
 
 
 
@@ -734,6 +735,8 @@ def register_routes(app: Flask) -> None:
             score_details=score_details,
             score_series_prediction=score_series_prediction,
             series_predictions=SeriesPrediction.query.join(PlayoffSeries).order_by(PlayoffSeries.round_code).all(),
+            round_weights=ROUND_WEIGHTS,
+            round_labels=ROUND_LABELS,
         )
 
     @app.get("/bracket")

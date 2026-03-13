@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80" role="img" aria-label="Л">
+  <circle cx="40" cy="40" r="38" fill="white" stroke="#c4102e" stroke-width="4"/>
+  <circle cx="40" cy="40" r="30" fill="#c4102e"/>
+  <text x="40" y="46" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="white" font-weight="700">Л</text>
+</svg>
