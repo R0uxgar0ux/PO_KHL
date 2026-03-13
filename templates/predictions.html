@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Прогнозы на серии</h2>
+<p>Укажите итог серии и точный счёт каждого матча (в формате {{'команда А : команда Б'}}). За каждый точно угаданный счёт матча начисляется +1 очко.</p>
+
+{% for conference_code in ['W', 'E'] %}
+  <h3 class="conference-title">{{ conference_labels[conference_code] }}</h3>
+  <div class="series-grid">
+  {% for series in series_list if series.conference == conference_code %}
+    {% set prediction = prediction_by_series.get(series.id) %}
+    {% set is_closed = series.prediction_deadline and now > series.prediction_deadline %}
+    {% set saved_scores = prediction.game_scores.split(',') if prediction and prediction.game_scores else [] %}
+
+    <section class="card series-card-modern series-card-wide">
+      <form method="post" class="prediction-form series-form series-form-horizontal" data-series-id="{{ series.id }}">
+        <input type="hidden" name="series_id" value="{{ series.id }}" />
+
+        <div class="series-head-row">
+          <h4>
+            <span class="team-name-wrap">{{ series.team_a }}</span>
+            <span class="series-dash">—</span>
+            <span class="team-name-wrap">{{ series.team_b }}</span>
+          </h4>
+          <div class="series-meta">
+            <span class="round-pill">{{ round_labels.get(series.round_code, series.round_code) }}</span>
+            <span class="muted">Дедлайн: {% if series.prediction_deadline %}{{ series.prediction_deadline.strftime('%d.%m.%Y %H:%M') }} МСК{% else %}не задан{% endif %}</span>
+          </div>
+        </div>
+
+        <div class="scoreline-block">
+          <label>Счёт серии</label>
+          <div class="scoreline-row improved">
+            <span class="team-name-wrap">{{ series.team_a }}</span>
+            <select name="predicted_wins_a" data-wins-a {% if is_closed %}disabled{% endif %}>
+              {% for n in range(0,5) %}
+                <option value="{{ n }}" {% if prediction and prediction.predicted_wins_a == n %}selected{% elif not prediction and n==4 %}selected{% endif %}>{{ n }}</option>
+              {% endfor %}
+            </select>
+            <strong>:</strong>
+            <select name="predicted_wins_b" data-wins-b {% if is_closed %}disabled{% endif %}>
+              {% for n in range(0,5) %}
+                <option value="{{ n }}" {% if prediction and prediction.predicted_wins_b == n %}selected{% elif not prediction and n==2 %}selected{% endif %}>{{ n }}</option>
+              {% endfor %}
+            </select>
+            <span class="team-name-wrap">{{ series.team_b }}</span>
+          </div>
+        </div>
+
+        <div class="match-score-grid" data-games-block>
+          {% for i in range(1, 8) %}
+          {% set score_pair = saved_scores[i-1].split(':') if saved_scores|length >= i and ':' in saved_scores[i-1] else ['1', '0'] %}
+          <div class="match-score-row" data-game-row>
+            <div class="match-title">Матч {{ i }}</div>
+            <div class="match-score-inputs">
+              <input type="number" name="game_home_scores" min="0" step="1" value="{{ score_pair[0] }}" aria-label="Матч {{ i }}: голы {{ series.team_a }}" {% if is_closed %}disabled{% endif %} />
+              <span>:</span>
+              <input type="number" name="game_away_scores" min="0" step="1" value="{{ score_pair[1] }}" aria-label="Матч {{ i }}: голы {{ series.team_b }}" {% if is_closed %}disabled{% endif %} />
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+
+        {% if is_closed %}<p class="muted">Дедлайн прошёл</p>{% endif %}
+        <button type="submit" {% if is_closed %}disabled{% endif %}>Сохранить</button>
+      </form>
+    </section>
+  {% else %}
+    <p>Пока нет серий в этой конференции.</p>
+  {% endfor %}
+  </div>
+{% endfor %}
+
+<script>
+  function normalizeSeriesScore(form) {
+    const a = form.querySelector('[data-wins-a]');
+    const b = form.querySelector('[data-wins-b]');
+    if (!a || !b) return 0;
+
+    let av = parseInt(a.value || '0', 10);
+    let bv = parseInt(b.value || '0', 10);
+
+    if (av !== 4 && bv !== 4) {
+      if (av >= bv) av = 4;
+      else bv = 4;
+    }
+    if (av > 4) av = 4;
+    if (bv > 4) bv = 4;
+    if (av < 0) av = 0;
+    if (bv < 0) bv = 0;
+    if (av + bv > 7) {
+      if (av === 4) bv = 3;
+      else av = 3;
+    }
+
+    a.value = String(av);
+    b.value = String(bv);
+    return av + bv;
+  }
+
+  function updateSeriesForm(form) {
+    const games = normalizeSeriesScore(form);
+    const rows = form.querySelectorAll('[data-game-row]');
+    rows.forEach((row, idx) => {
+      const visible = idx < games;
+      row.style.display = visible ? 'grid' : 'none';
+      row.querySelectorAll('input').forEach((input) => {
+        input.disabled = !visible;
+      });
+    });
+  }
+
+  document.querySelectorAll('.series-form').forEach((form) => {
+    form.querySelectorAll('[data-wins-a], [data-wins-b]').forEach((input) => {
+      input.addEventListener('change', () => updateSeriesForm(form));
+    });
+    updateSeriesForm(form);
+  });
+</script>
+{% endblock %}
