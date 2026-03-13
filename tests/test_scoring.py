@@ -228,3 +228,12 @@ def test_locked_match_cannot_be_changed_in_detailed_round():
             assert response.status_code == 302
             saved = SeriesPrediction.query.filter_by(user_id=user.id, series_id=series.id).first()
             assert saved.game_scores.startswith("1:0")
+
+
+def test_team_logo_url_points_to_local_static_assets():
+    app = make_app()
+    with app.test_request_context():
+        from app import team_logo_url
+
+        assert team_logo_url("Локомотив").endswith("/static/team_logos/lokomotiv.svg")
+        assert team_logo_url("Неизвестная команда").endswith("/static/team_logos/default.svg")
