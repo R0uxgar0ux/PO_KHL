@@ -237,3 +237,5 @@ def test_team_logo_url_points_to_local_static_assets():
 
         assert team_logo_url("Локомотив").endswith("/static/team_logos/lokomotiv.svg")
         assert team_logo_url("Неизвестная команда").endswith("/static/team_logos/default.svg")
+        assert team_logo_url("Ак Барс").endswith("/static/team_logos/ak_bars.svg")
+        assert team_logo_url("Нефтехимик").endswith("/static/team_logos/neftekhimik.svg")

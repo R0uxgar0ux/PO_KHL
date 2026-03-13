@@ -25,6 +25,12 @@ DETAILED_ROUNDS = {"SF", "F"}
 TEAM_LOGO_FILES = {
     "Авангард": "avangard.svg",
     "Металлург": "metallurg.svg",
+    "Ак Барс": "ak_bars.svg",
+    "Трактор": "traktor.svg",
+    "Сибирь": "sibir.svg",
+    "Салават Юлаев": "salavat_yulaev.svg",
+    "Автомобилист": "avtomobilist.svg",
+    "Нефтехимик": "neftekhimik.svg",
     "Северсталь": "severstal.svg",
     "Динамо Мн": "dynamo_minsk.svg",
     "Динамо Минск": "dynamo_minsk.svg",
