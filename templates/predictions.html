@@ -1,25 +1,34 @@
 {% extends 'base.html' %}
 {% block content %}
 <h2>Прогнозы на серии</h2>
-<p>Выберите счёт серии, и форма сама покажет только нужное число матчей. Для каждого матча выбирается победитель.</p>
+<p>Укажите итог серии и точный счёт каждого матча (в формате {{'команда А : команда Б'}}). За каждый точно угаданный счёт матча начисляется +1 очко.</p>
 
 {% for conference_code in ['W', 'E'] %}
   <h3 class="conference-title">{{ conference_labels[conference_code] }}</h3>
-  <div class="grid">
+  <div class="series-grid">
   {% for series in series_list if series.conference == conference_code %}
     {% set prediction = prediction_by_series.get(series.id) %}
     {% set is_closed = series.prediction_deadline and now > series.prediction_deadline %}
-    <section class="card compact-card">
-      <h4>{{ series.team_a }} — {{ series.team_b }}</h4>
-      <p><strong>{{ round_labels.get(series.round_code, series.round_code) }}</strong></p>
-      <p class="muted">Дедлайн: {% if series.prediction_deadline %}{{ series.prediction_deadline.strftime('%d.%m.%Y %H:%M') }} МСК{% else %}не задан{% endif %}</p>
+    {% set saved_scores = prediction.game_scores.split(',') if prediction and prediction.game_scores else [] %}
+    <section class="card series-card-modern">
+      <header class="series-head">
+        <h4>
+          <span class="team-name-wrap">{{ series.team_a }}</span>
+          <span class="series-dash">—</span>
+          <span class="team-name-wrap">{{ series.team_b }}</span>
+        </h4>
+        <div class="series-meta">
+          <span class="round-pill">{{ round_labels.get(series.round_code, series.round_code) }}</span>
+          <span class="muted">Дедлайн: {% if series.prediction_deadline %}{{ series.prediction_deadline.strftime('%d.%m.%Y %H:%M') }} МСК{% else %}не задан{% endif %}</span>
+        </div>
+      </header>
 
       <form method="post" class="prediction-form series-form" data-series-id="{{ series.id }}">
         <input type="hidden" name="series_id" value="{{ series.id }}" />
 
         <label>Счёт серии</label>
-        <div class="scoreline-row">
-          <span>{{ series.team_a }}</span>
+        <div class="scoreline-row improved">
+          <span class="team-name-wrap">{{ series.team_a }}</span>
           <select name="predicted_wins_a" data-wins-a {% if is_closed %}disabled{% endif %}>
             {% for n in range(0,5) %}
               <option value="{{ n }}" {% if prediction and prediction.predicted_wins_a == n %}selected{% elif not prediction and n==4 %}selected{% endif %}>{{ n }}</option>
@@ -28,21 +37,22 @@
           <strong>:</strong>
           <select name="predicted_wins_b" data-wins-b {% if is_closed %}disabled{% endif %}>
             {% for n in range(0,5) %}
-              <option value="{{ n }}" {% if prediction and prediction.predicted_wins_b == n %}selected{% elif not prediction and n==1 %}selected{% endif %}>{{ n }}</option>
+              <option value="{{ n }}" {% if prediction and prediction.predicted_wins_b == n %}selected{% elif not prediction and n==2 %}selected{% endif %}>{{ n }}</option>
             {% endfor %}
           </select>
-          <span>{{ series.team_b }}</span>
+          <span class="team-name-wrap">{{ series.team_b }}</span>
         </div>
 
-        {% set outcomes = prediction.game_outcomes.split(',') if prediction and prediction.game_outcomes else [] %}
-        <div class="games-inline" data-games-block>
+        <div class="match-score-grid" data-games-block>
           {% for i in range(1, 8) %}
-          <div class="game-chip" data-game-row>
-            <span>Матч {{ i }}</span>
-            <select name="game_outcomes" {% if is_closed %}disabled{% endif %}>
-              <option value="A" {% if outcomes|length >= i and outcomes[i-1] == 'A' %}selected{% endif %}>{{ series.team_a }}</option>
-              <option value="B" {% if outcomes|length >= i and outcomes[i-1] == 'B' %}selected{% endif %}>{{ series.team_b }}</option>
-            </select>
+          {% set score_pair = saved_scores[i-1].split(':') if saved_scores|length >= i and ':' in saved_scores[i-1] else ['1', '0'] %}
+          <div class="match-score-row" data-game-row>
+            <div class="match-title">Матч {{ i }}</div>
+            <div class="match-score-inputs">
+              <input type="number" name="game_home_scores" min="0" step="1" value="{{ score_pair[0] }}" aria-label="Матч {{ i }}: голы {{ series.team_a }}" {% if is_closed %}disabled{% endif %} />
+              <span>:</span>
+              <input type="number" name="game_away_scores" min="0" step="1" value="{{ score_pair[1] }}" aria-label="Матч {{ i }}: голы {{ series.team_b }}" {% if is_closed %}disabled{% endif %} />
+            </div>
           </div>
           {% endfor %}
         </div>
@@ -89,9 +99,10 @@
     const rows = form.querySelectorAll('[data-game-row]');
     rows.forEach((row, idx) => {
       const visible = idx < games;
-      row.style.display = visible ? 'flex' : 'none';
-      const select = row.querySelector('select');
-      if (select) select.disabled = !visible;
+      row.style.display = visible ? 'grid' : 'none';
+      row.querySelectorAll('input').forEach((input) => {
+        input.disabled = !visible;
+      });
     });
   }
 

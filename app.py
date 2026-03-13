@@ -116,6 +116,7 @@ class SeriesPrediction(db.Model):
     predicted_wins_a = db.Column(db.Integer, nullable=False)
     predicted_wins_b = db.Column(db.Integer, nullable=False)
     game_outcomes = db.Column(db.String(32), nullable=False, default="")  # CSV of A/B outcomes by games
+    game_scores = db.Column(db.String(96), nullable=False, default="")  # CSV of a:b scores by games (team_a perspective)
 
     user = db.relationship("User", backref=db.backref("series_predictions", lazy=True))
     series = db.relationship("PlayoffSeries", backref=db.backref("series_predictions", lazy=True))
@@ -128,6 +129,7 @@ def ensure_schema_compatibility() -> None:
     user_columns = {col["name"] for col in inspector.get_columns("user")}
     match_columns = {col["name"] for col in inspector.get_columns("match")}
     series_columns = {col["name"] for col in inspector.get_columns("playoff_series")}
+    series_prediction_columns = {col["name"] for col in inspector.get_columns("series_prediction")}
 
     if "is_admin" not in user_columns:
         db.session.execute(text("ALTER TABLE user ADD COLUMN is_admin BOOLEAN DEFAULT 0"))
@@ -146,6 +148,8 @@ def ensure_schema_compatibility() -> None:
         db.session.execute(text("ALTER TABLE match ADD COLUMN series_id INTEGER"))
     if "prediction_deadline" not in series_columns:
         db.session.execute(text("ALTER TABLE playoff_series ADD COLUMN prediction_deadline DATETIME"))
+    if "game_scores" not in series_prediction_columns:
+        db.session.execute(text("ALTER TABLE series_prediction ADD COLUMN game_scores VARCHAR(96) DEFAULT ''"))
 
     db.session.commit()
 
@@ -213,21 +217,45 @@ def score_prediction(prediction: Prediction) -> int:
     return score_details(prediction)["total"]
 
 
+def parse_game_scores(serialized: str) -> list[tuple[int, int]]:
+    scores: list[tuple[int, int]] = []
+    for raw in serialized.split(","):
+        value = raw.strip()
+        if not value:
+            continue
+        if ":" not in value:
+            continue
+        left, right = value.split(":", 1)
+        if not left.isdigit() or not right.isdigit():
+            continue
+        scores.append((int(left), int(right)))
+    return scores
+
+
+def serialize_game_scores(scores: list[tuple[int, int]]) -> str:
+    return ",".join(f"{home}:{away}" for home, away in scores)
+
+
 def series_actual(series: PlayoffSeries) -> dict:
     games = sorted(series.matches, key=lambda m: m.kickoff)
     outcomes: list[str] = []
+    scores: list[tuple[int, int]] = []
     wins_a = 0
     wins_b = 0
 
     for game in games:
         if not game.is_finished:
             continue
-        if game.home_score == game.away_score:
-            continue
         if game.home_team == series.team_a:
-            winner = "A" if game.home_score > game.away_score else "B"
+            a_goals, b_goals = game.home_score, game.away_score
         else:
-            winner = "B" if game.home_score > game.away_score else "A"
+            a_goals, b_goals = game.away_score, game.home_score
+
+        scores.append((a_goals, b_goals))
+        if a_goals == b_goals:
+            continue
+
+        winner = "A" if a_goals > b_goals else "B"
         outcomes.append(winner)
         if winner == "A":
             wins_a += 1
@@ -240,6 +268,7 @@ def series_actual(series: PlayoffSeries) -> dict:
         "wins_a": wins_a,
         "wins_b": wins_b,
         "outcomes": outcomes,
+        "scores": scores,
         "finished": finished,
         "winner": winner,
     }
@@ -267,13 +296,15 @@ def score_series_prediction(prediction: SeriesPrediction) -> dict:
         base += 4
         components.append("точный счет серии")
 
-    predicted_outcomes = [x for x in prediction.game_outcomes.split(",") if x]
-    for idx, real in enumerate(actual["outcomes"]):
-        if idx < len(predicted_outcomes) and predicted_outcomes[idx] == real:
+    predicted_scores = parse_game_scores(prediction.game_scores)
+    exact_match_hits = 0
+    for idx, real_score in enumerate(actual["scores"]):
+        if idx < len(predicted_scores) and predicted_scores[idx] == real_score:
             base += 1
+            exact_match_hits += 1
 
-    if base > 0:
-        components.append("бонус за попадания по матчам")
+    if exact_match_hits > 0:
+        components.append(f"+{exact_match_hits} за точные счета матчей")
 
     total = int(round(base * weight))
     return {"total": total, "base": base, "weight": weight, "components": components}
@@ -511,23 +542,38 @@ def register_routes(app: Flask) -> None:
                 flash("В серии максимум 7 матчей")
                 return redirect(url_for("predictions"))
 
-            outcomes = request.form.getlist("game_outcomes")[:games_count]
-            if len(outcomes) != games_count:
-                flash("Заполните исходы всех матчей серии")
+            raw_home_scores = request.form.getlist("game_home_scores")[:games_count]
+            raw_away_scores = request.form.getlist("game_away_scores")[:games_count]
+            if len(raw_home_scores) != games_count or len(raw_away_scores) != games_count:
+                flash("Заполните точные счета всех матчей серии")
                 return redirect(url_for("predictions"))
-            if any(item not in ("A", "B") for item in outcomes):
-                flash("Некорректные исходы матчей")
-                return redirect(url_for("predictions"))
+
+            game_scores: list[tuple[int, int]] = []
+            outcomes: list[str] = []
+            for idx, (raw_home, raw_away) in enumerate(zip(raw_home_scores, raw_away_scores), start=1):
+                if not raw_home.isdigit() or not raw_away.isdigit():
+                    flash(f"Матч {idx}: укажите счет неотрицательными числами")
+                    return redirect(url_for("predictions"))
+                home_score = int(raw_home)
+                away_score = int(raw_away)
+                if home_score == away_score:
+                    flash(f"Матч {idx}: в плей-офф не может быть ничьи")
+                    return redirect(url_for("predictions"))
+                game_scores.append((home_score, away_score))
+                outcomes.append("A" if home_score > away_score else "B")
+
             if outcomes.count("A") != wins_a or outcomes.count("B") != wins_b:
-                flash("Исходы матчей должны совпадать с итогом серии")
+                flash("Победы по матчам должны совпадать с итоговым счетом серии")
                 return redirect(url_for("predictions"))
 
             serialized = ",".join(outcomes)
+            serialized_scores = serialize_game_scores(game_scores)
             prediction = SeriesPrediction.query.filter_by(user_id=user.id, series_id=series.id).first()
             if prediction:
                 prediction.predicted_wins_a = wins_a
                 prediction.predicted_wins_b = wins_b
                 prediction.game_outcomes = serialized
+                prediction.game_scores = serialized_scores
                 flash("Прогноз по серии обновлен")
             else:
                 db.session.add(
@@ -537,6 +583,7 @@ def register_routes(app: Flask) -> None:
                         predicted_wins_a=wins_a,
                         predicted_wins_b=wins_b,
                         game_outcomes=serialized,
+                        game_scores=serialized_scores,
                     )
                 )
                 flash("Прогноз по серии сохранен")

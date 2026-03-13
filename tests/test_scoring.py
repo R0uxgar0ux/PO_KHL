@@ -14,7 +14,7 @@ def make_app():
     return app
 
 
-def test_series_scoring_exact_score():
+def test_series_scoring_includes_exact_match_scores_bonus():
     app = make_app()
     with app.app_context():
         user = User(username="u1", password_hash="x", display_name="u1")
@@ -22,7 +22,6 @@ def test_series_scoring_exact_score():
         db.session.add_all([user, series])
         db.session.flush()
 
-        # фактическая серия 4:1 по матчам
         from app import Match
 
         games = [
@@ -35,9 +34,25 @@ def test_series_scoring_exact_score():
         db.session.add_all(games)
         db.session.commit()
 
-        prediction = SeriesPrediction(user_id=user.id, series_id=series.id, predicted_wins_a=4, predicted_wins_b=1, game_outcomes="A,A,B,A,A")
-        details = score_series_prediction(prediction)
-        assert details["total"] > 0
+        perfect = SeriesPrediction(
+            user_id=user.id,
+            series_id=series.id,
+            predicted_wins_a=4,
+            predicted_wins_b=1,
+            game_outcomes="A,A,B,A,A",
+            game_scores="3:1,2:1,2:4,2:1,5:0",
+        )
+        near = SeriesPrediction(
+            user_id=user.id,
+            series_id=series.id,
+            predicted_wins_a=4,
+            predicted_wins_b=1,
+            game_outcomes="A,A,B,A,A",
+            game_scores="4:1,2:1,2:4,2:1,5:0",
+        )
+        perfect_score = score_series_prediction(perfect)["total"]
+        near_score = score_series_prediction(near)["total"]
+        assert perfect_score > near_score
 
 
 def test_leaderboard_uses_series_predictions():
@@ -63,8 +78,22 @@ def test_leaderboard_uses_series_predictions():
 
         db.session.add_all(
             [
-                SeriesPrediction(user_id=a.id, series_id=series.id, predicted_wins_a=4, predicted_wins_b=0, game_outcomes="A,A,A,A"),
-                SeriesPrediction(user_id=b.id, series_id=series.id, predicted_wins_a=4, predicted_wins_b=3, game_outcomes="A,B,A,B,A,B,A"),
+                SeriesPrediction(
+                    user_id=a.id,
+                    series_id=series.id,
+                    predicted_wins_a=4,
+                    predicted_wins_b=0,
+                    game_outcomes="A,A,A,A",
+                    game_scores="2:1,3:1,2:1,3:2",
+                ),
+                SeriesPrediction(
+                    user_id=b.id,
+                    series_id=series.id,
+                    predicted_wins_a=4,
+                    predicted_wins_b=3,
+                    game_outcomes="A,B,A,B,A,B,A",
+                    game_scores="2:1,2:3,1:2,2:3,2:1,1:2,2:1",
+                ),
             ]
         )
         db.session.commit()
