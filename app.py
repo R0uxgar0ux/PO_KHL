@@ -246,8 +246,12 @@ def series_actual(series: PlayoffSeries) -> dict:
 
 
 def score_series_prediction(prediction: SeriesPrediction) -> dict:
-    actual = series_actual(prediction.series)
-    weight = ROUND_WEIGHTS.get(prediction.series.round_code, 1.0)
+    series = prediction.series or db.session.get(PlayoffSeries, prediction.series_id)
+    if not series:
+        return {"total": 0, "base": 0, "weight": 1.0, "components": []}
+
+    actual = series_actual(series)
+    weight = ROUND_WEIGHTS.get(series.round_code, 1.0)
     if not actual["finished"]:
         return {"total": 0, "base": 0, "weight": weight, "components": []}
 
@@ -462,13 +466,13 @@ def register_routes(app: Flask) -> None:
             flash("Профиль обновлен")
             return redirect(url_for("cabinet"))
 
-        points = sum(score_prediction(prediction) for prediction in user.predictions)
+        points = sum(score_series_prediction(prediction)["total"] for prediction in user.series_predictions)
         exact_hits = sum(
             1
-            for prediction in user.predictions
-            if prediction.match.is_finished
-            and prediction.predicted_home == prediction.match.home_score
-            and prediction.predicted_away == prediction.match.away_score
+            for prediction in user.series_predictions
+            if (actual := series_actual(prediction.series))["finished"]
+            and prediction.predicted_wins_a == actual["wins_a"]
+            and prediction.predicted_wins_b == actual["wins_b"]
         )
         return render_template(
             "cabinet.html",
