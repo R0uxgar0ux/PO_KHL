@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Дерево плей-офф</h2>
+<p>Верхний блок — сетка серий, нижний — детальная таблица по играм 1–7, победам и шайбам.</p>
+
+<section class="card">
+  <div class="bracket-grid playoff-like">
+    {% for r in round_order %}
+      <div class="bracket-col">
+        <h3>{{ round_labels[r] }}</h3>
+        {% for conf in ['W', 'E'] %}
+          {% for series in bracket[conf][r] %}
+            <article class="series-card scoreboard">
+              <div class="team-row {% if series.winner == series.team_a %}winner{% endif %}">
+                <span>{{ series.team_a }}</span>
+                <strong>{{ series.wins.get(series.team_a, 0) }}</strong>
+              </div>
+              <div class="team-row {% if series.winner == series.team_b %}winner{% endif %}">
+                <span>{{ series.team_b }}</span>
+                <strong>{{ series.wins.get(series.team_b, 0) }}</strong>
+              </div>
+            </article>
+          {% endfor %}
+        {% endfor %}
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% for r in round_order %}
+<section class="card">
+  <h3>{{ round_labels[r] }}</h3>
+  <table class="round-table">
+    <thead>
+      <tr>
+        <th>Метка</th>
+        <th>Серия</th>
+        <th>1</th>
+        <th>2</th>
+        <th>3</th>
+        <th>4</th>
+        <th>5</th>
+        <th>6</th>
+        <th>7</th>
+        <th>Выигрыши</th>
+        <th>Шайбы</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in round_rows[r] %}
+      <tr>
+        <td rowspan="2">{{ row.label }}</td>
+        <td class="team-name {% if row.winner == row.team_a %}winner-text{% endif %}">{{ row.team_a }}</td>
+        <td>{{ row.games_a[0] }}</td>
+        <td>{{ row.games_a[1] }}</td>
+        <td>{{ row.games_a[2] }}</td>
+        <td>{{ row.games_a[3] }}</td>
+        <td>{{ row.games_a[4] }}</td>
+        <td>{{ row.games_a[5] }}</td>
+        <td>{{ row.games_a[6] }}</td>
+        <td>{{ row.wins_a }}</td>
+        <td>{{ row.goals_a }}</td>
+      </tr>
+      <tr>
+        <td class="team-name {% if row.winner == row.team_b %}winner-text{% endif %}">{{ row.team_b }}</td>
+        <td>{{ row.games_b[0] }}</td>
+        <td>{{ row.games_b[1] }}</td>
+        <td>{{ row.games_b[2] }}</td>
+        <td>{{ row.games_b[3] }}</td>
+        <td>{{ row.games_b[4] }}</td>
+        <td>{{ row.games_b[5] }}</td>
+        <td>{{ row.games_b[6] }}</td>
+        <td>{{ row.wins_b }}</td>
+        <td>{{ row.goals_b }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="11" class="muted">Нет серий на этой стадии</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
+{% endblock %}
