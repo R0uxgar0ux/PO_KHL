@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from flask import Flask, flash, redirect, render_template, request, session, url_for
@@ -417,6 +417,39 @@ def build_bracket_data() -> dict:
     return data
 
 
+
+def series_results_snapshot(series: PlayoffSeries) -> dict:
+    games = sorted(series.matches, key=lambda item: item.kickoff)
+    scores: list[tuple[int, int]] = []
+    wins_a = 0
+    wins_b = 0
+
+    for game in games:
+        if not game.is_finished:
+            continue
+        if game.home_team == series.team_a:
+            a_goals, b_goals = game.home_score, game.away_score
+        else:
+            a_goals, b_goals = game.away_score, game.home_score
+        scores.append((a_goals, b_goals))
+        if a_goals > b_goals:
+            wins_a += 1
+        elif b_goals > a_goals:
+            wins_b += 1
+
+    return {
+        "wins_a": wins_a,
+        "wins_b": wins_b,
+        "scores": scores,
+    }
+
+
+def game_teams_by_index(series: PlayoffSeries, game_index: int) -> tuple[str, str]:
+    home_for_a = game_index in {1, 2, 5, 7}
+    if home_for_a:
+        return series.team_a, series.team_b
+    return series.team_b, series.team_a
+
 def register_routes(app: Flask) -> None:
     @app.context_processor
     def inject_user():
@@ -649,15 +682,82 @@ def register_routes(app: Flask) -> None:
             return redirect(url_for("cabinet"))
 
         if request.method == "POST":
-            match = Match.query.get_or_404(int(request.form["match_id"]))
-            match.home_score = int(request.form["home_score"])
-            match.away_score = int(request.form["away_score"])
+            series_id = int(request.form["series_id"])
+            series = PlayoffSeries.query.get_or_404(series_id)
+
+            wins_a = int(request.form["wins_a"])
+            wins_b = int(request.form["wins_b"])
+            if 4 not in (wins_a, wins_b):
+                flash("Серия играется до 4 побед — одна из команд должна иметь 4")
+                return redirect(url_for("admin_results"))
+            if wins_a < 0 or wins_b < 0 or wins_a > 4 or wins_b > 4:
+                flash("Некорректный счет серии")
+                return redirect(url_for("admin_results"))
+
+            games_count = wins_a + wins_b
+            if games_count > 7:
+                flash("В серии максимум 7 матчей")
+                return redirect(url_for("admin_results"))
+
+            raw_home_scores = request.form.getlist("game_home_scores")[:games_count]
+            raw_away_scores = request.form.getlist("game_away_scores")[:games_count]
+            if len(raw_home_scores) != games_count or len(raw_away_scores) != games_count:
+                flash("Заполните точные счета всех сыгранных матчей")
+                return redirect(url_for("admin_results"))
+
+            scores: list[tuple[int, int]] = []
+            outcomes: list[str] = []
+            for idx, (raw_home, raw_away) in enumerate(zip(raw_home_scores, raw_away_scores), start=1):
+                if not raw_home.isdigit() or not raw_away.isdigit():
+                    flash(f"Матч {idx}: укажите счет неотрицательными числами")
+                    return redirect(url_for("admin_results"))
+                home_score = int(raw_home)
+                away_score = int(raw_away)
+                if home_score == away_score:
+                    flash(f"Матч {idx}: в плей-офф не может быть ничьи")
+                    return redirect(url_for("admin_results"))
+                scores.append((home_score, away_score))
+                outcomes.append("A" if home_score > away_score else "B")
+
+            if outcomes.count("A") != wins_a or outcomes.count("B") != wins_b:
+                flash("Победы по матчам должны совпадать с итоговым счетом серии")
+                return redirect(url_for("admin_results"))
+
+            Match.query.filter_by(series_id=series.id).delete()
+            base_kickoff = datetime.now().replace(hour=19, minute=30, second=0, microsecond=0)
+            for idx, (a_goals, b_goals) in enumerate(scores, start=1):
+                home_team, away_team = game_teams_by_index(series, idx)
+                if home_team == series.team_a:
+                    home_score, away_score = a_goals, b_goals
+                else:
+                    home_score, away_score = b_goals, a_goals
+                db.session.add(
+                    Match(
+                        home_team=home_team,
+                        away_team=away_team,
+                        kickoff=base_kickoff,
+                        conference=series.conference,
+                        round_code=series.round_code,
+                        series_id=series.id,
+                        home_score=home_score,
+                        away_score=away_score,
+                    )
+                )
+                base_kickoff = base_kickoff + timedelta(days=1)
+
             db.session.commit()
-            flash("Результат сохранен")
+            flash("Результаты серии сохранены")
             return redirect(url_for("admin_results"))
 
-        matches = Match.query.order_by(Match.kickoff).all()
-        return render_template("admin_results.html", matches=matches, conference_labels=CONFERENCE_LABELS)
+        series_list = PlayoffSeries.query.order_by(PlayoffSeries.round_code, PlayoffSeries.conference, PlayoffSeries.id).all()
+        results_by_series = {series.id: series_results_snapshot(series) for series in series_list}
+        return render_template(
+            "admin_results.html",
+            series_list=series_list,
+            results_by_series=results_by_series,
+            conference_labels=CONFERENCE_LABELS,
+            round_labels=ROUND_LABELS,
+        )
 
     @app.route("/admin/matches", methods=["GET", "POST"])
     def admin_matches():
