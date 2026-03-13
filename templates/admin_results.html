@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Панель внесения результатов</h2>
+<p>Админ может заносить итоговые счета матчей.</p>
+
+<div class="grid">
+{% for match in matches %}
+  <section class="card">
+    <h3>{{ match.home_team }} — {{ match.away_team }}</h3>
+    <p><strong>Конференция:</strong> {{ conference_labels.get(match.conference, match.conference) }}</p>
+    <p><strong>Стадия:</strong> {{ match.round_label }}</p>
+    <p>Текущий итог: {% if match.is_finished %}{{ match.home_score }} : {{ match.away_score }}{% else %}еще не задан{% endif %}</p>
+    <form method="post" class="prediction-form">
+      <input type="hidden" name="match_id" value="{{ match.id }}" />
+      <label>{{ match.home_team }}
+        <input type="number" min="0" name="home_score" value="{{ match.home_score if match.home_score is not none else 0 }}" required />
+      </label>
+      <label>{{ match.away_team }}
+        <input type="number" min="0" name="away_score" value="{{ match.away_score if match.away_score is not none else 0 }}" required />
+      </label>
+      <button type="submit">Сохранить итог</button>
+    </form>
+  </section>
+{% endfor %}
+</div>
+{% endblock %}
