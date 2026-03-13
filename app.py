@@ -22,23 +22,28 @@ CONFERENCE_LABELS = {"W": "Запад", "E": "Восток"}
 LOGIN_RE = re.compile(r"^[a-zA-Z0-9_]{3,24}$")
 DETAILED_ROUNDS = {"SF", "F"}
 
-TEAM_LOGO_FILES = {
-    "Авангард": "team_logos/avangard.svg",
-    "СКА": "team_logos/ska.svg",
-    "Локомотив": "team_logos/lokomotiv.svg",
-    "Металлург": "team_logos/metallurg.svg",
-    "Динамо М": "team_logos/dynamo_moscow.svg",
-    "Динамо Мн": "team_logos/dynamo_minsk.svg",
-    "ЦСКА": "team_logos/cska.svg",
-    "Спартак": "team_logos/spartak.svg",
-    "Северсталь": "team_logos/severstal.svg",
-    "Торпедо": "team_logos/torpedo.svg",
+TEAM_LOGO_URLS = {
+    "Авангард": "https://content.sportslogos.net/logos/90/2709/full/8272_omsk_avangard-primary-2019.png",
+    "Металлург": "https://content.sportslogos.net/logos/90/2703/full/3128_magnitogorsk_metallurg-primary-2019.png",
+    "Ак Барс": "https://content.sportslogos.net/logos/90/2715/full/4726_kazan_bars_ak-primary-2019.png",
+    "Трактор": "https://content.sportslogos.net/logos/90/2705/full/6251_chelyabinsk_traktor-alternate-2021.png",
+    "Сибирь": "https://content.sportslogos.net/logos/90/2712/full/3513_hc_sibir_novosibirsk-alternate-2015.png",
+    "Салават Юлаев": "https://content.sportslogos.net/logos/90/2697/full/7514_salavat__yulaev_ufa-primary-2016.png",
+    "Автомобилист": "https://content.sportslogos.net/logos/90/2832/full/5709__avtomobilist_yekaterinburg-primary-2014.png",
+    "Нефтехимик": "https://content.sportslogos.net/logos/90/2719/full/9214_neftekhimik_nizhnekamsk-primary-2018.png",
+    "Северсталь": "https://content.sportslogos.net/logos/90/2701/full/7828_cherepovets_severstal-primary-2020.png",
+    "Динамо Мн": "https://content.sportslogos.net/logos/90/2698/full/9446_minsk_dinamo-primary-2020.png",
+    "ЦСКА": "https://content.sportslogos.net/logos/90/2708/full/6830_cska_moscow-primary-2017.gif",
+    "Динамо М": "https://content.sportslogos.net/logos/90/2833/full/1217_moscow_dynamo-primary-2018.png",
+    "Спартак": "https://content.sportslogos.net/logos/90/2699/full/9359_moscow_spartak-primary-2011.png",
+    "Торпедо": "https://content.sportslogos.net/logos/90/2717/full/9071_nizhny_novgorod_torpedo-primary-2019.png",
+    "СКА": "https://content.sportslogos.net/logos/90/2707/full/2566_ska_saint_petersburg-primary-2015.png",
+    "Локомотив": "https://content.sportslogos.net/logos/90/2710/full/44nc0zvkg10ltefgy9s2wg8r5.gif",
 }
 
 
 def team_logo_url(team_name: str) -> str:
-    filename = TEAM_LOGO_FILES.get(team_name, "team_logos/default.svg")
-    return url_for("static", filename=filename)
+    return TEAM_LOGO_URLS.get(team_name, "https://content.sportslogos.net/logos/90/2709/full/8272_omsk_avangard-primary-2019.png")
 
 
 

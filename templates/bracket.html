@@ -12,11 +12,11 @@
           {% for series in bracket[conf][r] %}
             <article class="series-card scoreboard">
               <div class="team-row {% if series.winner == series.team_a %}winner{% endif %}">
-                <span>{{ series.team_a }}</span>
+                <span class="team-name-with-logo"><img class="team-logo" src="{{ team_logo_url(series.team_a) }}" alt="" loading="lazy" /><span>{{ series.team_a }}</span></span>
                 <strong>{{ series.wins.get(series.team_a, 0) }}</strong>
               </div>
               <div class="team-row {% if series.winner == series.team_b %}winner{% endif %}">
-                <span>{{ series.team_b }}</span>
+                <span class="team-name-with-logo"><img class="team-logo" src="{{ team_logo_url(series.team_b) }}" alt="" loading="lazy" /><span>{{ series.team_b }}</span></span>
                 <strong>{{ series.wins.get(series.team_b, 0) }}</strong>
               </div>
             </article>
@@ -50,7 +50,7 @@
       {% for row in round_rows[r] %}
       <tr>
         <td rowspan="2">{{ row.label }}</td>
-        <td class="team-name {% if row.winner == row.team_a %}winner-text{% endif %}">{{ row.team_a }}</td>
+        <td class="team-name {% if row.winner == row.team_a %}winner-text{% endif %}"><span class="team-name-with-logo"><img class="team-logo" src="{{ team_logo_url(row.team_a) }}" alt="" loading="lazy" /><span>{{ row.team_a }}</span></span></td>
         <td>{{ row.games_a[0] }}</td>
         <td>{{ row.games_a[1] }}</td>
         <td>{{ row.games_a[2] }}</td>
@@ -62,7 +62,7 @@
         <td>{{ row.goals_a }}</td>
       </tr>
       <tr>
-        <td class="team-name {% if row.winner == row.team_b %}winner-text{% endif %}">{{ row.team_b }}</td>
+        <td class="team-name {% if row.winner == row.team_b %}winner-text{% endif %}"><span class="team-name-with-logo"><img class="team-logo" src="{{ team_logo_url(row.team_b) }}" alt="" loading="lazy" /><span>{{ row.team_b }}</span></span></td>
         <td>{{ row.games_b[0] }}</td>
         <td>{{ row.games_b[1] }}</td>
         <td>{{ row.games_b[2] }}</td>
