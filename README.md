@@ -50,3 +50,16 @@ pytest
 - При сборке Docker-образа логотипы автоматически скачиваются в `static/team_logos/` скриптом `scripts/fetch_team_logos.sh` (по заданным URL).
 - При локальном запуске без Docker можно вручную выполнить: `./scripts/fetch_team_logos.sh ./static/team_logos`.
 
+
+## TypeScript модуль подсчета очков
+Добавлен отдельный модуль бизнес-логики (без привязки к UI):
+- `ts/src/predictorScoring.ts` — типы, валидация, подсчет очков, турнирная таблица.
+- `ts/tests/scoring.test.js` — тестовые сценарии.
+- `ts/examples/exampleData.ts` — пример входных данных и результата подсчета.
+
+Команды:
+```bash
+npm run test:ts
+npm run example:ts
+```
+
