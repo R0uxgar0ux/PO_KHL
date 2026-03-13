@@ -1,0 +1,11 @@
+services:
+  khl-predictor:
+    build: .
+    container_name: khl-predictor
+    ports:
+      - "5000:5000"
+    environment:
+      - DB_PATH=/app/data/khl_playoff.db
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
