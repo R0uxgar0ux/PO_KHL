@@ -232,10 +232,16 @@ def test_locked_match_cannot_be_changed_in_detailed_round():
 
 def test_team_logo_url_points_to_local_static_assets():
     app = make_app()
-    with app.test_request_context():
-        from app import team_logo_url
+    from app import BASE_DIR, team_logo_url
 
-        assert team_logo_url("Локомотив").endswith("/static/team_logos/lokomotiv.svg")
-        assert team_logo_url("Неизвестная команда").endswith("/static/team_logos/default.svg")
-        assert team_logo_url("Ак Барс").endswith("/static/team_logos/ak_bars.svg")
-        assert team_logo_url("Нефтехимик").endswith("/static/team_logos/neftekhimik.svg")
+    logos_dir = BASE_DIR / "static" / "team_logos"
+    temp_logo = logos_dir / "ak_bars.png"
+    temp_logo.write_bytes(b"png")
+    try:
+        with app.test_request_context():
+            assert team_logo_url("Ак Барс").endswith("/static/team_logos/ak_bars.png")
+            assert team_logo_url("Локомотив").endswith("/static/team_logos/default.svg")
+            assert team_logo_url("Неизвестная команда").endswith("/static/team_logos/default.svg")
+    finally:
+        temp_logo.unlink(missing_ok=True)
+

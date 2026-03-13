@@ -45,3 +45,8 @@ docker compose up -d --build
 ```bash
 pytest
 ```
+
+## Логотипы команд
+- При сборке Docker-образа логотипы автоматически скачиваются в `static/team_logos/` скриптом `scripts/fetch_team_logos.sh` (по заданным URL).
+- При локальном запуске без Docker можно вручную выполнить: `./scripts/fetch_team_logos.sh ./static/team_logos`.
+

@@ -23,29 +23,33 @@ LOGIN_RE = re.compile(r"^[a-zA-Z0-9_]{3,24}$")
 DETAILED_ROUNDS = {"SF", "F"}
 
 TEAM_LOGO_FILES = {
-    "Авангард": "avangard.svg",
-    "Металлург": "metallurg.svg",
-    "Ак Барс": "ak_bars.svg",
-    "Трактор": "traktor.svg",
-    "Сибирь": "sibir.svg",
-    "Салават Юлаев": "salavat_yulaev.svg",
-    "Автомобилист": "avtomobilist.svg",
-    "Нефтехимик": "neftekhimik.svg",
-    "Северсталь": "severstal.svg",
-    "Динамо Мн": "dynamo_minsk.svg",
-    "Динамо Минск": "dynamo_minsk.svg",
-    "ЦСКА": "cska.svg",
-    "Динамо М": "dynamo_moscow.svg",
-    "Динамо Москва": "dynamo_moscow.svg",
-    "Спартак": "spartak.svg",
-    "Торпедо": "torpedo.svg",
-    "СКА": "ska.svg",
-    "Локомотив": "lokomotiv.svg",
+    "Авангард": "avangard.png",
+    "Металлург": "metallurg.png",
+    "Ак Барс": "ak_bars.png",
+    "Трактор": "traktor.png",
+    "Сибирь": "sibir.png",
+    "Салават Юлаев": "salavat_yulaev.png",
+    "Автомобилист": "avtomobilist.png",
+    "Нефтехимик": "neftekhimik.png",
+    "Северсталь": "severstal.png",
+    "Динамо Мн": "dynamo_minsk.png",
+    "Динамо Минск": "dynamo_minsk.png",
+    "ЦСКА": "cska.gif",
+    "Динамо М": "dynamo_moscow.png",
+    "Динамо Москва": "dynamo_moscow.png",
+    "Спартак": "spartak.png",
+    "Торпедо": "torpedo.png",
+    "СКА": "ska.png",
+    "Локомотив": "lokomotiv.gif",
 }
+
 
 
 def team_logo_url(team_name: str) -> str:
     logo_file = TEAM_LOGO_FILES.get(team_name, "default.svg")
+    logo_path = BASE_DIR / "static" / "team_logos" / logo_file
+    if not logo_path.exists():
+        logo_file = "default.svg"
     return url_for("static", filename=f"team_logos/{logo_file}")
 
 
