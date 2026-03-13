@@ -3,21 +3,6 @@
 <h2>Текущие результаты</h2>
 <p>Ваши очки: <strong>{{ user_points }}</strong></p>
 
-<section class="card">
-  <details>
-    <summary><strong>Показать правила подсчёта очков (по сериям)</strong></summary>
-    <ul>
-      <li>+3 за угаданного победителя серии</li>
-      <li>+4 за точный счёт серии (например 4:1)</li>
-      <li>+1 за каждый точно угаданный счёт матча внутри серии</li>
-      <li>Итог умножается на вес стадии ПО:</li>
-      <li>— {{ round_labels["R1"] }}: ×{{ round_weights["R1"] }}</li>
-      <li>— {{ round_labels["QF"] }}: ×{{ round_weights["QF"] }}</li>
-      <li>— {{ round_labels["SF"] }}: ×{{ round_weights["SF"] }}</li>
-      <li>— {{ round_labels["F"] }}: ×{{ round_weights["F"] }}</li>
-    </ul>
-  </details>
-</section>
 
 <section class="card">
   <h3>Турнирная таблица прогнозистов</h3>

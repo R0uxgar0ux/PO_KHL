@@ -16,7 +16,11 @@ DB_PATH = Path(os.getenv("DB_PATH", BASE_DIR / "khl_playoff.db"))
 
 db = SQLAlchemy()
 
-ROUND_WEIGHTS = {"R1": 1.0, "QF": 1.25, "SF": 1.6, "F": 2.2}
+ROUND_WEIGHTS = {"R1": 1.0, "QF": 1.0, "SF": 1.0, "F": 1.0}
+SERIES_WINNER_POINTS = {"R1": 1, "QF": 2, "SF": 8, "F": 16}
+SERIES_SCORE_POINTS = {"R1": 1, "QF": 2, "SF": 8, "F": 16}
+MATCH_WINNER_POINTS = {"R1": 0, "QF": 0, "SF": 1, "F": 2}
+MATCH_SCORE_POINTS = {"R1": 0, "QF": 0, "SF": 1, "F": 2}
 ROUND_LABELS = {"R1": "1/8 финала", "QF": "1/4 финала", "SF": "1/2 финала", "F": "Финал"}
 CONFERENCE_LABELS = {"W": "Запад", "E": "Восток"}
 LOGIN_RE = re.compile(r"^[a-zA-Z0-9_]{3,24}$")
@@ -357,34 +361,55 @@ def score_series_prediction(prediction: SeriesPrediction) -> dict:
         return {"total": 0, "base": 0, "weight": 1.0, "components": []}
 
     actual = series_actual(series)
-    weight = ROUND_WEIGHTS.get(series.round_code, 1.0)
+    round_code = series.round_code
     if not actual["finished"]:
-        return {"total": 0, "base": 0, "weight": weight, "components": []}
+        return {"total": 0, "base": 0, "weight": 1.0, "components": []}
 
     base = 0
     components: list[str] = []
 
     predicted_winner = "A" if prediction.predicted_wins_a > prediction.predicted_wins_b else "B"
-    if predicted_winner == actual["winner"]:
-        base += 3
-        components.append("угадан победитель серии")
+    winner_correct = predicted_winner == actual["winner"]
+    exact_series_score = prediction.predicted_wins_a == actual["wins_a"] and prediction.predicted_wins_b == actual["wins_b"]
 
-    if prediction.predicted_wins_a == actual["wins_a"] and prediction.predicted_wins_b == actual["wins_b"]:
-        base += 4
-        components.append("точный счет серии")
+    if winner_correct:
+        points = SERIES_WINNER_POINTS.get(round_code, 0)
+        base += points
+        components.append(f"угадан победитель серии (+{points})")
+
+    if exact_series_score:
+        points = SERIES_SCORE_POINTS.get(round_code, 0)
+        base += points
+        components.append(f"точный счет серии (+{points})")
 
     predicted_scores = parse_game_scores(prediction.game_scores)
+    match_winner_hits = 0
     exact_match_hits = 0
     for idx, real_score in enumerate(actual["scores"]):
-        if idx < len(predicted_scores) and predicted_scores[idx] == real_score:
-            base += 1
-            exact_match_hits += 1
+        if idx >= len(predicted_scores):
+            continue
+        predicted_score = predicted_scores[idx]
+        real_winner = "A" if real_score[0] > real_score[1] else "B"
+        pred_winner = "A" if predicted_score[0] > predicted_score[1] else "B"
 
+        if pred_winner == real_winner:
+            points = MATCH_WINNER_POINTS.get(round_code, 0)
+            base += points
+            if points:
+                match_winner_hits += 1
+
+        if predicted_score == real_score:
+            points = MATCH_SCORE_POINTS.get(round_code, 0)
+            base += points
+            if points:
+                exact_match_hits += 1
+
+    if match_winner_hits > 0:
+        components.append(f"угадано победителей матчей: {match_winner_hits}")
     if exact_match_hits > 0:
-        components.append(f"+{exact_match_hits} за точные счета матчей")
+        components.append(f"точных счетов матчей: {exact_match_hits}")
 
-    total = int(round(base * weight))
-    return {"total": total, "base": base, "weight": weight, "components": components}
+    return {"total": base, "base": base, "weight": 1.0, "components": components}
 
 
 def leaderboard() -> list[dict]:
@@ -747,7 +772,6 @@ def register_routes(app: Flask) -> None:
             score_details=score_details,
             score_series_prediction=score_series_prediction,
             series_predictions=SeriesPrediction.query.join(PlayoffSeries).order_by(PlayoffSeries.round_code).all(),
-            round_weights=ROUND_WEIGHTS,
             round_labels=ROUND_LABELS,
         )
 

@@ -271,3 +271,55 @@ def test_regulations_page_renders_for_logged_user():
             assert 'Регламент турнира прогнозистов КХЛ' in html
             assert 'В 1/2 финала и в финале' in html
             assert 'Как определяется место в таблице' in html
+
+
+def test_series_scoring_matches_regulations_weights():
+    app = make_app()
+    with app.app_context():
+        user = User(username="u7x", password_hash="x", display_name="u7x")
+        sf_series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="SF")
+        r1_series = PlayoffSeries(team_a="C", team_b="D", conference="E", round_code="R1")
+        db.session.add_all([user, sf_series, r1_series])
+        db.session.flush()
+
+        from app import Match
+
+        sf_games = [
+            Match(series_id=sf_series.id, home_team="A", away_team="B", kickoff=datetime(2026, 3, 1, 12, 0), home_score=3, away_score=2),
+            Match(series_id=sf_series.id, home_team="A", away_team="B", kickoff=datetime(2026, 3, 2, 12, 0), home_score=2, away_score=1),
+            Match(series_id=sf_series.id, home_team="B", away_team="A", kickoff=datetime(2026, 3, 3, 12, 0), home_score=1, away_score=2),
+            Match(series_id=sf_series.id, home_team="B", away_team="A", kickoff=datetime(2026, 3, 4, 12, 0), home_score=2, away_score=3),
+        ]
+        r1_games = [
+            Match(series_id=r1_series.id, home_team="C", away_team="D", kickoff=datetime(2026, 3, 1, 12, 0), home_score=3, away_score=1),
+            Match(series_id=r1_series.id, home_team="C", away_team="D", kickoff=datetime(2026, 3, 2, 12, 0), home_score=2, away_score=1),
+            Match(series_id=r1_series.id, home_team="D", away_team="C", kickoff=datetime(2026, 3, 3, 12, 0), home_score=1, away_score=2),
+            Match(series_id=r1_series.id, home_team="D", away_team="C", kickoff=datetime(2026, 3, 4, 12, 0), home_score=0, away_score=4),
+        ]
+        db.session.add_all(sf_games + r1_games)
+        db.session.commit()
+
+        sf_prediction = SeriesPrediction(
+            user_id=user.id,
+            series_id=sf_series.id,
+            predicted_wins_a=4,
+            predicted_wins_b=0,
+            game_outcomes="A,A,A,A",
+            game_scores="3:2,2:1,2:1,3:2",
+        )
+        r1_prediction = SeriesPrediction(
+            user_id=user.id,
+            series_id=r1_series.id,
+            predicted_wins_a=4,
+            predicted_wins_b=0,
+            game_outcomes="A,A,A,A",
+            game_scores="9:0,9:0,9:0,9:0",
+        )
+
+        sf_score = score_series_prediction(sf_prediction)["total"]
+        r1_score = score_series_prediction(r1_prediction)["total"]
+
+        # SF: 8 (winner series) + 8 (exact series) + 4*1 (match winners) + 4*1 (exact match scores)
+        assert sf_score == 24
+        # R1: only series matters (1 + 1), match-level points ignored
+        assert r1_score == 2
