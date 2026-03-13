@@ -245,3 +245,29 @@ def test_team_logo_url_points_to_local_static_assets():
     finally:
         temp_logo.unlink(missing_ok=True)
 
+
+
+def test_regulations_requires_auth():
+    app = make_app()
+    with app.test_client() as client:
+        response = client.get('/regulations', follow_redirects=False)
+        assert response.status_code == 302
+        assert response.headers['Location'].endswith('/login')
+
+
+def test_regulations_page_renders_for_logged_user():
+    app = make_app()
+    with app.app_context():
+        user = User(username='u6x', password_hash='x', display_name='u6x')
+        db.session.add(user)
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess['user_id'] = user.id
+            response = client.get('/regulations')
+            assert response.status_code == 200
+            html = response.get_data(as_text=True)
+            assert 'Регламент турнира прогнозистов КХЛ' in html
+            assert 'В 1/2 финала и в финале' in html
+            assert 'Как определяется место в таблице' in html

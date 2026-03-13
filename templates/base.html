@@ -15,6 +15,7 @@
         <a href="{{ url_for('predictions') }}">Прогнозы</a>
         <a href="{{ url_for('results') }}">Результаты</a>
         <a href="{{ url_for('bracket') }}">Дерево</a>
+        <a href="{{ url_for('regulations') }}">Регламент</a>
         {% if current_user.is_admin %}
           <a href="{{ url_for('admin_home') }}">Админка</a>
         {% endif %}

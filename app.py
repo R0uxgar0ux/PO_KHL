@@ -766,6 +766,14 @@ def register_routes(app: Flask) -> None:
             round_rows=bracket_data["round_rows"],
         )
 
+
+    @app.get("/regulations")
+    def regulations():
+        user = current_user()
+        if not user:
+            return redirect(url_for("login"))
+        return render_template("regulations.html")
+
     @app.get("/admin")
     def admin_home():
         user = current_user()
