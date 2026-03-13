@@ -186,6 +186,7 @@ def is_valid_login(value: str) -> bool:
 
 
 def score_details(prediction: Prediction) -> dict:
+    """Legacy per-match scoring (kept for backward compatibility)."""
     match = prediction.match
     if not match.is_finished:
         return {"total": 0, "weight": ROUND_WEIGHTS.get(match.round_code, 1.0), "base": 0, "components": []}
@@ -193,7 +194,6 @@ def score_details(prediction: Prediction) -> dict:
     pred_home, pred_away = prediction.predicted_home, prediction.predicted_away
     real_home, real_away = match.home_score, match.away_score
     pred_diff, real_diff = pred_home - pred_away, real_home - real_away
-    pred_total, real_total = pred_home + pred_away, real_home + real_away
 
     components: list[str] = []
     base_points = 0
@@ -201,18 +201,9 @@ def score_details(prediction: Prediction) -> dict:
     if _sign(pred_diff) == _sign(real_diff):
         base_points += 2
         components.append("угадан исход")
-    if pred_diff == real_diff:
-        base_points += 2
-        components.append("угадана разница шайб")
-    if pred_total == real_total:
-        base_points += 1
-        components.append("угадана сумма шайб")
     if pred_home == real_home and pred_away == real_away:
         base_points += 4
         components.append("точный счет")
-    if pred_total >= 7 and real_total >= 7 and abs(pred_total - real_total) <= 1:
-        base_points += 1
-        components.append("бонус за высокий тотал")
 
     weight = ROUND_WEIGHTS.get(match.round_code, 1.0)
     return {"total": int(round(base_points * weight)), "weight": weight, "base": base_points, "components": components}
@@ -222,17 +213,78 @@ def score_prediction(prediction: Prediction) -> int:
     return score_details(prediction)["total"]
 
 
+def series_actual(series: PlayoffSeries) -> dict:
+    games = sorted(series.matches, key=lambda m: m.kickoff)
+    outcomes: list[str] = []
+    wins_a = 0
+    wins_b = 0
+
+    for game in games:
+        if not game.is_finished:
+            continue
+        if game.home_score == game.away_score:
+            continue
+        if game.home_team == series.team_a:
+            winner = "A" if game.home_score > game.away_score else "B"
+        else:
+            winner = "B" if game.home_score > game.away_score else "A"
+        outcomes.append(winner)
+        if winner == "A":
+            wins_a += 1
+        else:
+            wins_b += 1
+
+    finished = wins_a == 4 or wins_b == 4
+    winner = "A" if wins_a > wins_b else "B" if wins_b > wins_a else None
+    return {
+        "wins_a": wins_a,
+        "wins_b": wins_b,
+        "outcomes": outcomes,
+        "finished": finished,
+        "winner": winner,
+    }
+
+
+def score_series_prediction(prediction: SeriesPrediction) -> dict:
+    actual = series_actual(prediction.series)
+    weight = ROUND_WEIGHTS.get(prediction.series.round_code, 1.0)
+    if not actual["finished"]:
+        return {"total": 0, "base": 0, "weight": weight, "components": []}
+
+    base = 0
+    components: list[str] = []
+
+    predicted_winner = "A" if prediction.predicted_wins_a > prediction.predicted_wins_b else "B"
+    if predicted_winner == actual["winner"]:
+        base += 3
+        components.append("угадан победитель серии")
+
+    if prediction.predicted_wins_a == actual["wins_a"] and prediction.predicted_wins_b == actual["wins_b"]:
+        base += 4
+        components.append("точный счет серии")
+
+    predicted_outcomes = [x for x in prediction.game_outcomes.split(",") if x]
+    for idx, real in enumerate(actual["outcomes"]):
+        if idx < len(predicted_outcomes) and predicted_outcomes[idx] == real:
+            base += 1
+
+    if base > 0:
+        components.append("бонус за попадания по матчам")
+
+    total = int(round(base * weight))
+    return {"total": total, "base": base, "weight": weight, "components": components}
+
+
 def leaderboard() -> list[dict]:
     result = []
     for user in User.query.order_by(User.display_name, User.username).all():
-        points = sum(score_prediction(prediction) for prediction in user.predictions)
-        exact_hits = sum(
-            1
-            for prediction in user.predictions
-            if prediction.match.is_finished
-            and prediction.predicted_home == prediction.match.home_score
-            and prediction.predicted_away == prediction.match.away_score
-        )
+        points = sum(score_series_prediction(prediction)["total"] for prediction in user.series_predictions)
+        exact_hits = 0
+        for prediction in user.series_predictions:
+            actual = series_actual(prediction.series)
+            if actual["finished"] and prediction.predicted_wins_a == actual["wins_a"] and prediction.predicted_wins_b == actual["wins_b"]:
+                exact_hits += 1
+
         result.append(
             {
                 "display_name": user.display_name,
@@ -242,6 +294,7 @@ def leaderboard() -> list[dict]:
                 "user_id": user.id,
             }
         )
+
     return sorted(result, key=lambda item: (item["points"], item["exact_hits"], item["display_name"]), reverse=True)
 
 
@@ -507,8 +560,10 @@ def register_routes(app: Flask) -> None:
             "results.html",
             finished_matches=finished_matches,
             board=leaderboard(),
-            user_points=sum(score_prediction(prediction) for prediction in user.predictions),
+            user_points=sum(score_series_prediction(prediction)["total"] for prediction in user.series_predictions),
             score_details=score_details,
+            score_series_prediction=score_series_prediction,
+            series_predictions=SeriesPrediction.query.join(PlayoffSeries).order_by(PlayoffSeries.round_code).all(),
         )
 
     @app.get("/bracket")

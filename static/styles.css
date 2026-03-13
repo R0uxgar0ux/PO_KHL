@@ -270,3 +270,36 @@ button.danger:hover {
 .winner-text {
   font-weight: 700;
 }
+
+
+.compact-card h4 {
+  margin-bottom: 8px;
+}
+
+.scoreline-row {
+  display: grid;
+  grid-template-columns: 1fr 70px 20px 70px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.games-inline {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.game-chip {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  background: #fafafa;
+  border: 1px solid #ececec;
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.game-chip span {
+  font-size: 13px;
+  min-width: 58px;
+}

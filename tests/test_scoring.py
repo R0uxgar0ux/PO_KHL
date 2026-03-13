@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from app import Match, Prediction, User, create_app, db, leaderboard, score_details, score_prediction
+from app import PlayoffSeries, SeriesPrediction, User, create_app, db, leaderboard, score_series_prediction
 
 
 def make_app():
@@ -14,61 +14,60 @@ def make_app():
     return app
 
 
-def test_scoring_with_round_weight():
+def test_series_scoring_exact_score():
     app = make_app()
     with app.app_context():
-        user = User(username="u1", password_hash="x")
-        final_match = Match(
-            home_team="A",
-            away_team="B",
-            kickoff=datetime(2026, 3, 10, 12, 0),
-            round_code="F",
-            home_score=3,
-            away_score=2,
+        user = User(username="u1", password_hash="x", display_name="u1")
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="F")
+        db.session.add_all([user, series])
+        db.session.flush()
+
+        # фактическая серия 4:1 по матчам
+        from app import Match
+
+        games = [
+            Match(series_id=series.id, home_team="A", away_team="B", kickoff=datetime(2026, 3, 1, 12, 0), home_score=3, away_score=1),
+            Match(series_id=series.id, home_team="A", away_team="B", kickoff=datetime(2026, 3, 2, 12, 0), home_score=2, away_score=1),
+            Match(series_id=series.id, home_team="B", away_team="A", kickoff=datetime(2026, 3, 3, 12, 0), home_score=4, away_score=2),
+            Match(series_id=series.id, home_team="B", away_team="A", kickoff=datetime(2026, 3, 4, 12, 0), home_score=1, away_score=2),
+            Match(series_id=series.id, home_team="A", away_team="B", kickoff=datetime(2026, 3, 5, 12, 0), home_score=5, away_score=0),
+        ]
+        db.session.add_all(games)
+        db.session.commit()
+
+        prediction = SeriesPrediction(user_id=user.id, series_id=series.id, predicted_wins_a=4, predicted_wins_b=1, game_outcomes="A,A,B,A,A")
+        details = score_series_prediction(prediction)
+        assert details["total"] > 0
+
+
+def test_leaderboard_uses_series_predictions():
+    app = make_app()
+    with app.app_context():
+        a = User(username="alice", password_hash="x", display_name="alice")
+        b = User(username="bob", password_hash="x", display_name="bob")
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="R1")
+        db.session.add_all([a, b, series])
+        db.session.flush()
+
+        from app import Match
+
+        db.session.add_all(
+            [
+                Match(series_id=series.id, home_team="A", away_team="B", kickoff=datetime(2026, 3, 1, 12, 0), home_score=2, away_score=1),
+                Match(series_id=series.id, home_team="A", away_team="B", kickoff=datetime(2026, 3, 2, 12, 0), home_score=3, away_score=1),
+                Match(series_id=series.id, home_team="B", away_team="A", kickoff=datetime(2026, 3, 3, 12, 0), home_score=1, away_score=2),
+                Match(series_id=series.id, home_team="B", away_team="A", kickoff=datetime(2026, 3, 4, 12, 0), home_score=2, away_score=3),
+            ]
         )
-        db.session.add_all([user, final_match])
         db.session.commit()
 
-        exact = Prediction(user_id=user.id, match_id=final_match.id, predicted_home=3, predicted_away=2)
-        assert score_prediction(exact) == 20  # (2 + 2 + 1 + 4) * 2.2 -> round(19.8)=20
-
-
-def test_scoring_components_outcome_only():
-    app = make_app()
-    with app.app_context():
-        user = User(username="u1", password_hash="x")
-        match = Match(
-            home_team="A",
-            away_team="B",
-            kickoff=datetime(2026, 3, 10, 12, 0),
-            round_code="QF",
-            home_score=4,
-            away_score=1,
+        db.session.add_all(
+            [
+                SeriesPrediction(user_id=a.id, series_id=series.id, predicted_wins_a=4, predicted_wins_b=0, game_outcomes="A,A,A,A"),
+                SeriesPrediction(user_id=b.id, series_id=series.id, predicted_wins_a=4, predicted_wins_b=3, game_outcomes="A,B,A,B,A,B,A"),
+            ]
         )
-        db.session.add_all([user, match])
-        db.session.commit()
-
-        prediction = Prediction(user_id=user.id, match_id=match.id, predicted_home=2, predicted_away=0)
-        details = score_details(prediction)
-
-        assert details["base"] == 4  # исход + разница
-        assert details["total"] == 5  # 4 * 1.25
-
-
-def test_leaderboard_tiebreak_exact_hits():
-    app = make_app()
-    with app.app_context():
-        a = User(username="alice", password_hash="x")
-        b = User(username="bob", password_hash="x")
-        match = Match(home_team="A", away_team="B", kickoff=datetime(2026, 3, 10, 12, 0), round_code="R1", home_score=1, away_score=1)
-        db.session.add_all([a, b, match])
-        db.session.commit()
-
-        pa = Prediction(user_id=a.id, match_id=match.id, predicted_home=1, predicted_away=1)
-        pb = Prediction(user_id=b.id, match_id=match.id, predicted_home=2, predicted_away=2)
-        db.session.add_all([pa, pb])
         db.session.commit()
 
         board = leaderboard()
         assert board[0]["display_name"] == "alice"
-        assert board[0]["exact_hits"] == 1
