@@ -323,3 +323,37 @@ def test_series_scoring_matches_regulations_weights():
         assert sf_score == 24
         # R1: only series matters (1 + 1), match-level points ignored
         assert r1_score == 2
+
+
+def test_admin_results_validate_home_away_rotation_against_series_score():
+    app = make_app()
+    with app.app_context():
+        admin = User(username="adm2", password_hash="x", display_name="adm2", is_admin=True)
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="R1")
+        db.session.add_all([admin, series])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = admin.id
+
+            response = client.post(
+                "/admin/results",
+                data={
+                    "action": "save_results",
+                    "series_id": str(series.id),
+                    "wins_a": "4",
+                    "wins_b": "0",
+                    # home-away inputs: this would imply A wins games 1-2 and B wins games 3-4
+                    # due home/away rotation, so final series score is not 4:0 for A and must be rejected
+                    "game_home_scores": ["1", "1", "1", "1"],
+                    "game_away_scores": ["0", "0", "0", "0"],
+                },
+                follow_redirects=True,
+            )
+
+            html = response.get_data(as_text=True)
+            assert "Победы по матчам должны совпадать с итоговым счетом серии" in html
+
+            from app import Match
+            assert Match.query.filter_by(series_id=series.id).count() == 0

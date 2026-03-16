@@ -855,8 +855,8 @@ def register_routes(app: Flask) -> None:
                 flash("Заполните точные счета всех сыгранных матчей")
                 return redirect(url_for("admin_results"))
 
-            scores: list[tuple[int, int]] = []
             outcomes: list[str] = []
+            matches_to_save: list[tuple[str, str, int, int]] = []
             for idx, (raw_home, raw_away) in enumerate(zip(raw_home_scores, raw_away_scores), start=1):
                 if not raw_home.isdigit() or not raw_away.isdigit():
                     flash(f"Матч {idx}: укажите счет неотрицательными числами")
@@ -866,8 +866,15 @@ def register_routes(app: Flask) -> None:
                 if home_score == away_score:
                     flash(f"Матч {idx}: в плей-офф не может быть ничьи")
                     return redirect(url_for("admin_results"))
-                scores.append((home_score, away_score))
-                outcomes.append("A" if home_score > away_score else "B")
+
+                home_team, away_team = game_teams_by_index(series, idx)
+                if home_team == series.team_a:
+                    a_goals, b_goals = home_score, away_score
+                else:
+                    a_goals, b_goals = away_score, home_score
+
+                outcomes.append("A" if a_goals > b_goals else "B")
+                matches_to_save.append((home_team, away_team, home_score, away_score))
 
             valid_sequence, message = validate_outcomes_sequence(outcomes, wins_a, wins_b)
             if not valid_sequence:
@@ -876,12 +883,7 @@ def register_routes(app: Flask) -> None:
 
             Match.query.filter_by(series_id=series.id).delete()
             base_kickoff = datetime.now().replace(hour=19, minute=30, second=0, microsecond=0)
-            for idx, (a_goals, b_goals) in enumerate(scores, start=1):
-                home_team, away_team = game_teams_by_index(series, idx)
-                if home_team == series.team_a:
-                    home_score, away_score = a_goals, b_goals
-                else:
-                    home_score, away_score = b_goals, a_goals
+            for home_team, away_team, home_score, away_score in matches_to_save:
                 db.session.add(
                     Match(
                         home_team=home_team,

@@ -48,12 +48,17 @@
         <div class="match-score-grid" data-games-block>
           {% for i in range(1, 8) %}
           {% set score_pair = result.scores[i-1] if result.scores|length >= i else (1, 0) %}
+          {% set home_for_a = i in [1, 2, 5, 7] %}
+          {% set home_team = series.team_a if home_for_a else series.team_b %}
+          {% set away_team = series.team_b if home_for_a else series.team_a %}
+          {% set home_value = score_pair[0] if home_for_a else score_pair[1] %}
+          {% set away_value = score_pair[1] if home_for_a else score_pair[0] %}
           <div class="match-score-row" data-game-row>
-            <div class="match-title">Матч {{ i }}</div>
+            <div class="match-title">Матч {{ i }} · {{ home_team }} — {{ away_team }}</div>
             <div class="match-score-inputs">
-              <input type="number" name="game_home_scores" min="0" step="1" value="{{ score_pair[0] }}" aria-label="Матч {{ i }}: голы {{ series.team_a }}" />
+              <input type="number" name="game_home_scores" min="0" step="1" value="{{ home_value }}" aria-label="Матч {{ i }}: голы хозяев ({{ home_team }})" />
               <span>:</span>
-              <input type="number" name="game_away_scores" min="0" step="1" value="{{ score_pair[1] }}" aria-label="Матч {{ i }}: голы {{ series.team_b }}" />
+              <input type="number" name="game_away_scores" min="0" step="1" value="{{ away_value }}" aria-label="Матч {{ i }}: голы гостей ({{ away_team }})" />
             </div>
           </div>
           {% endfor %}
