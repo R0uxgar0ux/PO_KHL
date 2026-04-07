@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Проверка прогнозов пользователей</h2>
+<p>Здесь видно, что начислено автоматически, есть ли пропущенные прогнозы и нужна ли ручная коррекция.</p>
+
+{% for item in users_rows %}
+<section class="card">
+  <h3>{{ item.user.display_name }} <span class="muted">(@{{ item.user.username }})</span></h3>
+  <p>
+    Начислено (авто): <strong>{{ item.raw_points }}</strong> ·
+    Коррекция: <strong>{{ item.adjustment }}</strong> ·
+    Итого: <strong>{{ item.total_points }}</strong>
+  </p>
+  <p>
+    По стадиям → 1/8: <strong>{{ item.stage_points['R1'] }}</strong>,
+    1/4: <strong>{{ item.stage_points['QF'] }}</strong>,
+    1/2: <strong>{{ item.stage_points['SF'] }}</strong>,
+    Финал: <strong>{{ item.stage_points['F'] }}</strong>.
+    {% if item.missing_count > 0 %}
+      <span class="danger-text">Нужна проверка: нет прогнозов по {{ item.missing_count }} сериям.</span>
+    {% else %}
+      <span class="muted">Все прогнозы сохранены.</span>
+    {% endif %}
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Стадия</th>
+        <th>Конференция</th>
+        <th>Серия</th>
+        <th>Прогноз</th>
+        <th>Статус</th>
+        <th>Начислено</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in item.rows %}
+      <tr>
+        <td>{{ row.series.round_label }}</td>
+        <td>{{ row.series.conference_label }}</td>
+        <td>{{ row.series.team_a }} — {{ row.series.team_b }}</td>
+        <td>
+          {% if row.has_prediction %}
+            {{ row.prediction.predicted_wins_a }}:{{ row.prediction.predicted_wins_b }}
+          {% else %}
+            <form method="post" class="inline-form">
+              <input type="hidden" name="action" value="save_prediction" />
+              <input type="hidden" name="user_id" value="{{ item.user.id }}" />
+              <input type="hidden" name="series_id" value="{{ row.series.id }}" />
+              <select name="series_score">
+                <option value="4:0">4:0</option>
+                <option value="4:1">4:1</option>
+                <option value="4:2">4:2</option>
+                <option value="4:3">4:3</option>
+                <option value="0:4">0:4</option>
+                <option value="1:4">1:4</option>
+                <option value="2:4">2:4</option>
+                <option value="3:4">3:4</option>
+              </select>
+              <button type="submit">Сохранить прогноз</button>
+            </form>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.has_prediction %}
+            Сохранён
+          {% else %}
+            <span class="danger-text">Нет прогноза</span>
+          {% endif %}
+        </td>
+        <td>{{ row.points }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
+{% endblock %}
