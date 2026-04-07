@@ -66,16 +66,17 @@
         {% if is_detailed %}
           <div class="match-score-grid" data-games-block>
             {% for i in range(1, 8) %}
-            {% set score_pair = saved_scores[i-1].split(':') if saved_scores|length >= i and ':' in saved_scores[i-1] else ['1', '0'] %}
+            {% set score_pair = saved_scores[i-1].split(':') if saved_scores|length >= i and ':' in saved_scores[i-1] else ['0', '0'] %}
             {% set is_locked_game = i in locked_games %}
+            {% set has_saved_match_score = prediction and saved_scores|length >= i %}
             <div class="match-score-row" data-game-row>
-              <div class="match-title">Матч {{ i }}</div>
+              <div class="match-title">Матч {{ i }} <span class="mini-lock">{% if is_locked_game %}🔒{% else %}🔓{% endif %}</span></div>
               <div class="match-score-inputs">
-                <input type="number" name="game_home_scores" min="0" step="1" value="{{ score_pair[0] }}" aria-label="Матч {{ i }}: голы {{ series.team_a }}" {% if is_closed %}disabled{% elif is_locked_game %}readonly{% endif %} />
+                <input type="number" name="game_home_scores" min="0" step="1" value="{{ score_pair[0] }}" class="{% if has_saved_match_score %}saved-prediction-value{% else %}unsaved-prediction-value{% endif %}" aria-label="Матч {{ i }}: голы {{ series.team_a }}" {% if is_closed %}disabled{% elif is_locked_game %}readonly{% endif %} />
                 <span>:</span>
-                <input type="number" name="game_away_scores" min="0" step="1" value="{{ score_pair[1] }}" aria-label="Матч {{ i }}: голы {{ series.team_b }}" {% if is_closed %}disabled{% elif is_locked_game %}readonly{% endif %} />
+                <input type="number" name="game_away_scores" min="0" step="1" value="{{ score_pair[1] }}" class="{% if has_saved_match_score %}saved-prediction-value{% else %}unsaved-prediction-value{% endif %}" aria-label="Матч {{ i }}: голы {{ series.team_b }}" {% if is_closed %}disabled{% elif is_locked_game %}readonly{% endif %} />
               </div>
-              {% if is_locked_game %}<div class="muted">🔒 прогноз на матч заблокирован</div>{% endif %}
+              {% if is_locked_game %}<div class="muted">прогноз на матч заблокирован</div>{% endif %}
             </div>
             {% endfor %}
           </div>

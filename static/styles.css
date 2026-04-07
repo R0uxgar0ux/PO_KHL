@@ -247,6 +247,11 @@ button.danger:hover { background: #2b2b2b; }
   min-width: 60px;
 }
 
+.mini-lock {
+  font-size: 12px;
+  margin-left: 6px;
+}
+
 .match-score-inputs {
   display: grid;
   grid-template-columns: 1fr auto 1fr;

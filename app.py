@@ -913,7 +913,10 @@ def register_routes(app: Flask) -> None:
             flash("Результаты серии сохранены")
             return redirect(focus_url)
 
-        series_list = PlayoffSeries.query.order_by(PlayoffSeries.round_code, PlayoffSeries.conference, PlayoffSeries.id).all()
+        series_list = PlayoffSeries.query.all()
+        round_order = {"F": 0, "SF": 1, "QF": 2, "R1": 3}
+        conf_order = {"W": 0, "E": 1}
+        series_list.sort(key=lambda s: (conf_order.get(s.conference, 99), round_order.get(s.round_code, 99), s.id))
         results_by_series = {series.id: series_results_snapshot(series) for series in series_list}
         locked_games_by_series = {series.id: parse_locked_games(series.locked_game_indices) for series in series_list}
         return render_template(
@@ -971,7 +974,10 @@ def register_routes(app: Flask) -> None:
             flash("Серия добавлена")
             return redirect(url_for("admin_matches"))
 
-        series_list = PlayoffSeries.query.order_by(PlayoffSeries.round_code, PlayoffSeries.id).all()
+        series_list = PlayoffSeries.query.all()
+        round_order = {"F": 0, "SF": 1, "QF": 2, "R1": 3}
+        conf_order = {"W": 0, "E": 1}
+        series_list.sort(key=lambda s: (round_order.get(s.round_code, 99), conf_order.get(s.conference, 99), s.id))
         return render_template(
             "admin_matches.html",
             series_list=series_list,

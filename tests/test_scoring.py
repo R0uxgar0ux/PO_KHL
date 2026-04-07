@@ -485,3 +485,40 @@ def test_admin_results_redirects_back_to_series_anchor():
             )
             assert response.status_code == 302
             assert response.headers['Location'].endswith(f'/admin/results#series-{series.id}')
+
+
+def test_admin_matches_shows_late_rounds_first():
+    app = make_app()
+    with app.app_context():
+        admin = User(username="adminordm", password_hash="x", display_name="adminordm", is_admin=True)
+        s_r1 = PlayoffSeries(team_a="R1A", team_b="R1B", conference="W", round_code="R1")
+        s_qf = PlayoffSeries(team_a="QFA", team_b="QFB", conference="W", round_code="QF")
+        s_sf = PlayoffSeries(team_a="SFA", team_b="SFB", conference="W", round_code="SF")
+        db.session.add_all([admin, s_r1, s_qf, s_sf])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = admin.id
+            response = client.get("/admin/matches")
+            html = response.get_data(as_text=True)
+            assert response.status_code == 200
+            assert html.find("SFA — SFB") < html.find("QFA — QFB") < html.find("R1A — R1B")
+
+
+def test_admin_results_shows_late_rounds_first_inside_conference():
+    app = make_app()
+    with app.app_context():
+        admin = User(username="adminordr", password_hash="x", display_name="adminordr", is_admin=True)
+        s_r1 = PlayoffSeries(team_a="R1X", team_b="R1Y", conference="W", round_code="R1")
+        s_sf = PlayoffSeries(team_a="SFX", team_b="SFY", conference="W", round_code="SF")
+        db.session.add_all([admin, s_r1, s_sf])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = admin.id
+            response = client.get("/admin/results")
+            html = response.get_data(as_text=True)
+            assert response.status_code == 200
+            assert html.find("SFX") < html.find("R1X")
