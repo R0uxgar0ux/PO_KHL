@@ -289,3 +289,6 @@ button.danger:hover { background: #2b2b2b; }
   .match-score-row { grid-template-columns: 1fr; }
   .match-title { min-width: auto; }
 }
+
+.danger-text { color: #b00020; font-weight: 700; }
+

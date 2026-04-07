@@ -6,7 +6,7 @@
 <section class="card">
   <table>
     <thead>
-      <tr><th>Отображаемое имя</th><th>Логин</th><th>Роль</th><th>Статус</th><th>Действия</th></tr>
+      <tr><th>Отображаемое имя</th><th>Логин</th><th>Роль</th><th>Статус</th><th>Коррекция очков</th><th>Действия</th></tr>
     </thead>
     <tbody>
       {% for u in users %}
@@ -15,6 +15,18 @@
         <td>{{ u.username }}</td>
         <td>{% if u.is_admin %}Администратор{% else %}Пользователь{% endif %}</td>
         <td>{% if u.is_blocked %}Заблокирован{% else %}Активен{% endif %}</td>
+        <td>
+          {% if not u.is_admin %}
+            <form method="post" class="inline-form">
+              <input type="hidden" name="user_id" value="{{ u.id }}" />
+              <input type="hidden" name="action" value="set_adjustment" />
+              <input type="number" name="points_adjustment" value="{{ u.points_adjustment or 0 }}" step="1" style="width:90px" />
+              <button type="submit">Сохранить</button>
+            </form>
+          {% else %}
+            —
+          {% endif %}
+        </td>
         <td>
           {% if not u.is_admin %}
             {% if not u.is_blocked %}

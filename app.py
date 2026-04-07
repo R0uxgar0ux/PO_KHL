@@ -129,6 +129,7 @@ class User(db.Model):
     display_name = db.Column(db.String(120), nullable=False, default="")
     favorite_team = db.Column(db.String(120), nullable=False, default="Авангард")
     bio = db.Column(db.String(255), nullable=False, default="")
+    points_adjustment = db.Column(db.Integer, nullable=False, default=0)
 
 
 class PlayoffSeries(db.Model):
@@ -220,6 +221,8 @@ def ensure_schema_compatibility() -> None:
         db.session.execute(text("ALTER TABLE user ADD COLUMN favorite_team VARCHAR(120) DEFAULT 'Авангард'"))
     if "bio" not in user_columns:
         db.session.execute(text("ALTER TABLE user ADD COLUMN bio VARCHAR(255) DEFAULT ''"))
+    if "points_adjustment" not in user_columns:
+        db.session.execute(text("ALTER TABLE user ADD COLUMN points_adjustment INTEGER DEFAULT 0"))
 
     if "conference" not in match_columns:
         db.session.execute(text("ALTER TABLE match ADD COLUMN conference VARCHAR(1) DEFAULT 'W'"))
@@ -412,10 +415,15 @@ def score_series_prediction(prediction: SeriesPrediction) -> dict:
     return {"total": base, "base": base, "weight": 1.0, "components": components}
 
 
+def user_total_points(user: User) -> int:
+    raw_points = sum(score_series_prediction(prediction)["total"] for prediction in user.series_predictions)
+    return raw_points + (user.points_adjustment or 0)
+
+
 def leaderboard() -> list[dict]:
     result = []
     for user in User.query.order_by(User.display_name, User.username).all():
-        points = sum(score_series_prediction(prediction)["total"] for prediction in user.series_predictions)
+        points = user_total_points(user)
         exact_hits = 0
         for prediction in user.series_predictions:
             actual = series_actual(prediction.series)
@@ -628,7 +636,7 @@ def register_routes(app: Flask) -> None:
             flash("Профиль обновлен")
             return redirect(url_for("cabinet"))
 
-        points = sum(score_series_prediction(prediction)["total"] for prediction in user.series_predictions)
+        points = user_total_points(user)
         exact_hits = sum(
             1
             for prediction in user.series_predictions
@@ -768,7 +776,7 @@ def register_routes(app: Flask) -> None:
             "results.html",
             finished_matches=finished_matches,
             board=leaderboard(),
-            user_points=sum(score_series_prediction(prediction)["total"] for prediction in user.series_predictions),
+            user_points=user_total_points(user),
             score_details=score_details,
             score_series_prediction=score_series_prediction,
             series_predictions=SeriesPrediction.query.join(PlayoffSeries).order_by(PlayoffSeries.round_code).all(),
@@ -968,6 +976,52 @@ def register_routes(app: Flask) -> None:
             round_labels=ROUND_LABELS,
         )
 
+    @app.get("/admin/predictions")
+    def admin_predictions():
+        user = current_user()
+        if not user:
+            return redirect(url_for("login"))
+        if not user.is_admin:
+            flash("Доступ только для администраторов")
+            return redirect(url_for("cabinet"))
+
+        users = User.query.order_by(User.display_name, User.username).all()
+        series_list = PlayoffSeries.query.order_by(PlayoffSeries.round_code, PlayoffSeries.conference, PlayoffSeries.id).all()
+
+        rows: list[dict] = []
+        for u in users:
+            predictions_by_series = {p.series_id: p for p in u.series_predictions}
+            user_rows = []
+            raw_points = 0
+            for series in series_list:
+                p = predictions_by_series.get(series.id)
+                if p:
+                    details = score_series_prediction(p)
+                    raw_points += details["total"]
+                    user_rows.append({
+                        "series": series,
+                        "prediction": p,
+                        "points": details["total"],
+                        "has_prediction": True,
+                    })
+                else:
+                    user_rows.append({
+                        "series": series,
+                        "prediction": None,
+                        "points": 0,
+                        "has_prediction": False,
+                    })
+
+            rows.append({
+                "user": u,
+                "rows": user_rows,
+                "raw_points": raw_points,
+                "adjustment": u.points_adjustment or 0,
+                "total_points": raw_points + (u.points_adjustment or 0),
+            })
+
+        return render_template("admin_predictions.html", users_rows=rows)
+
     @app.route("/admin/users", methods=["GET", "POST"])
     def admin_users():
         user = current_user()
@@ -990,6 +1044,14 @@ def register_routes(app: Flask) -> None:
             elif action == "unblock":
                 target.is_blocked = False
                 flash(f"Пользователь {target.username} разблокирован")
+            elif action == "set_adjustment":
+                try:
+                    adjustment = int(request.form.get("points_adjustment", "0"))
+                except ValueError:
+                    flash("Корректировка очков должна быть целым числом")
+                    return redirect(url_for("admin_users"))
+                target.points_adjustment = adjustment
+                flash(f"Корректировка очков для {target.username} установлена: {adjustment}")
             elif action == "delete":
                 Prediction.query.filter_by(user_id=target.id).delete()
                 SeriesPrediction.query.filter_by(user_id=target.id).delete()

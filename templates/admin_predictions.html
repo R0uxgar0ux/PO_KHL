@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Проверка прогнозов пользователей</h2>
+<p>Здесь можно увидеть, по каким сериям прогноз сохранён, по каким — нет, и как сложились очки.</p>
+
+{% for item in users_rows %}
+<section class="card">
+  <h3>{{ item.user.display_name }} <span class="muted">(@{{ item.user.username }})</span></h3>
+  <p>
+    База: <strong>{{ item.raw_points }}</strong> ·
+    Коррекция: <strong>{{ item.adjustment }}</strong> ·
+    Итого: <strong>{{ item.total_points }}</strong>
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>Стадия</th>
+        <th>Серия</th>
+        <th>Прогноз</th>
+        <th>Статус</th>
+        <th>Очки</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in item.rows %}
+      <tr>
+        <td>{{ row.series.round_label }}</td>
+        <td>{{ row.series.team_a }} — {{ row.series.team_b }}</td>
+        <td>
+          {% if row.has_prediction %}
+            {{ row.prediction.predicted_wins_a }}:{{ row.prediction.predicted_wins_b }}
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td>
+          {% if row.has_prediction %}
+            Сохранён
+          {% else %}
+            <span class="danger-text">Нет прогноза</span>
+          {% endif %}
+        </td>
+        <td>{{ row.points }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
+{% endblock %}

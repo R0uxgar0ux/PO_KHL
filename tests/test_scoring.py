@@ -357,3 +357,59 @@ def test_admin_results_validate_home_away_rotation_against_series_score():
 
             from app import Match
             assert Match.query.filter_by(series_id=series.id).count() == 0
+
+
+def test_leaderboard_applies_points_adjustment():
+    app = make_app()
+    with app.app_context():
+        a = User(username="ua", password_hash="x", display_name="ua", points_adjustment=0)
+        b = User(username="ub", password_hash="x", display_name="ub", points_adjustment=5)
+        db.session.add_all([a, b])
+        db.session.commit()
+
+        board = leaderboard()
+        assert board[0]["username"] == "ub"
+        assert board[0]["points"] == 5
+
+
+def test_admin_can_set_points_adjustment():
+    app = make_app()
+    with app.app_context():
+        admin = User(username="adminset", password_hash="x", display_name="adminset", is_admin=True)
+        user = User(username="plainuser", password_hash="x", display_name="plainuser")
+        db.session.add_all([admin, user])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = admin.id
+
+            response = client.post(
+                "/admin/users",
+                data={"user_id": str(user.id), "action": "set_adjustment", "points_adjustment": "7"},
+                follow_redirects=True,
+            )
+            assert response.status_code == 200
+
+            updated = User.query.get(user.id)
+            assert updated.points_adjustment == 7
+
+
+def test_admin_predictions_page_shows_missing_predictions():
+    app = make_app()
+    with app.app_context():
+        admin = User(username="adminpred", password_hash="x", display_name="adminpred", is_admin=True)
+        user = User(username="u8x", password_hash="x", display_name="u8x")
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="R1")
+        db.session.add_all([admin, user, series])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = admin.id
+
+            response = client.get('/admin/predictions')
+            assert response.status_code == 200
+            html = response.get_data(as_text=True)
+            assert 'Проверка прогнозов пользователей' in html
+            assert 'Нет прогноза' in html
