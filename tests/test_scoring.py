@@ -625,3 +625,40 @@ def test_results_page_shows_leader_highlight_and_insights():
             assert "Факты по текущему ПО" in html
             assert "👑" in html
             assert "Leader" in html
+            assert "current-user-row" in html
+
+
+def test_results_page_shows_tied_leaders_in_facts():
+    app = make_app()
+    with app.app_context():
+        u1 = User(username="u1lead", password_hash="x", display_name="U1")
+        u2 = User(username="u2lead", password_hash="x", display_name="U2")
+        db.session.add_all([u1, u2])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = u1.id
+            response = client.get("/results")
+            html = response.get_data(as_text=True)
+            assert response.status_code == 200
+            assert "Лидеры по очкам" in html
+            assert "U1, U2" in html or "U2, U1" in html
+
+
+def test_predictions_page_hides_empty_round_and_conference_blocks():
+    app = make_app()
+    with app.app_context():
+        user = User(username="hideempty", password_hash="x", display_name="hideempty")
+        # only one series in one conference/round
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="QF")
+        db.session.add_all([user, series])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = user.id
+            response = client.get("/predictions")
+            html = response.get_data(as_text=True)
+            assert response.status_code == 200
+            assert "Пока нет серий на этой стадии в конференции" not in html

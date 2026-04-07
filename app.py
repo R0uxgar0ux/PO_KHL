@@ -483,6 +483,8 @@ def build_results_insights(board: list[dict]) -> dict:
 
     avg_points = round(sum(row["points"] for row in board) / total_players, 2) if total_players else 0.0
     points_gap = (leader["points"] - second["points"]) if leader and second else 0
+    top_points = leader["points"] if leader else 0
+    top_leaders = [row["display_name"] for row in board if row["points"] == top_points] if leader else []
 
     stage_order = ["F", "SF", "QF", "R1"]
     users = User.query.all()
@@ -492,8 +494,8 @@ def build_results_insights(board: list[dict]) -> dict:
         if not finished_series:
             continue
 
-        leader_name = "—"
-        leader_points = 0
+        leader_points = -1
+        leader_names: list[str] = []
         exact_hits_max = 0
         for user in users:
             stage_points = 0
@@ -507,7 +509,9 @@ def build_results_insights(board: list[dict]) -> dict:
                     stage_exact += 1
             if stage_points > leader_points:
                 leader_points = stage_points
-                leader_name = user.display_name
+                leader_names = [user.display_name]
+            elif stage_points == leader_points:
+                leader_names.append(user.display_name)
             exact_hits_max = max(exact_hits_max, stage_exact)
 
         stage_rows.append(
@@ -515,7 +519,7 @@ def build_results_insights(board: list[dict]) -> dict:
                 "round_code": stage_code,
                 "round_label": ROUND_LABELS.get(stage_code, stage_code),
                 "finished_series_count": len(finished_series),
-                "leader_name": leader_name,
+                "leader_names": leader_names,
                 "leader_points": leader_points,
                 "max_exact_hits": exact_hits_max,
             }
@@ -524,6 +528,8 @@ def build_results_insights(board: list[dict]) -> dict:
     return {
         "total_players": total_players,
         "leader": leader,
+        "top_leaders": top_leaders,
+        "top_points": top_points,
         "average_points": avg_points,
         "gap_to_second": points_gap,
         "stage_rows": stage_rows,

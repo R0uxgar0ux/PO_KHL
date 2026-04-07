@@ -6,11 +6,15 @@
 
 {% set round_order = ['F', 'SF', 'QF', 'R1'] %}
 {% for round_code in round_order %}
+  {% set round_series = series_list | selectattr('round_code', 'equalto', round_code) | list %}
+  {% if round_series %}
   <h3 class="conference-title">{{ round_labels.get(round_code, round_code) }}</h3>
   {% for conference_code in ['W', 'E'] %}
+    {% set conference_series = round_series | selectattr('conference', 'equalto', conference_code) | list %}
+    {% if conference_series %}
     <h4 class="conference-title">{{ conference_labels[conference_code] }}</h4>
     <div class="series-grid">
-    {% for series in series_list if series.round_code == round_code and series.conference == conference_code %}
+    {% for series in conference_series %}
     {% set prediction = prediction_by_series.get(series.id) %}
     {% set is_closed = series.prediction_deadline and now > series.prediction_deadline %}
     {% set is_detailed = series.round_code in detailed_rounds %}
@@ -92,11 +96,11 @@
         <button type="submit" {% if is_closed %}disabled{% endif %}>Сохранить</button>
       </form>
     </section>
-    {% else %}
-      <p>Пока нет серий на этой стадии в конференции {{ conference_labels[conference_code] }}.</p>
     {% endfor %}
     </div>
+    {% endif %}
   {% endfor %}
+  {% endif %}
 {% endfor %}
 
 <script>

@@ -359,3 +359,8 @@ button.danger:hover { background: #2b2b2b; }
 .leader-row {
   background: #fff6cf;
 }
+
+.current-user-row {
+  outline: 2px solid #d70912;
+  outline-offset: -2px;
+}

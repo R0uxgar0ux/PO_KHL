@@ -10,7 +10,7 @@
       <p>Участников: <strong>{{ insights.total_players }}</strong></p>
       <p>Средние очки: <strong>{{ insights.average_points }}</strong></p>
       {% if insights.leader %}
-        <p>Лидер сейчас: <strong>{{ insights.leader.display_name }}</strong> ({{ insights.leader.points }} очков).</p>
+        <p>Лидеры по очкам: <strong>{{ insights.top_leaders | join(', ') }}</strong> ({{ insights.top_points }} очков).</p>
         <p>Отрыв от 2-го места: <strong>{{ insights.gap_to_second }}</strong>.</p>
       {% endif %}
     </div>
@@ -20,7 +20,7 @@
         {% for row in insights.stage_rows %}
           <li>
             {{ row.round_label }}: завершено серий <strong>{{ row.finished_series_count }}</strong>,
-            лучший по очкам — <strong>{{ row.leader_name }}</strong> ({{ row.leader_points }}),
+            лидеры по очкам — <strong>{{ row.leader_names | join(', ') }}</strong> ({{ row.leader_points }}),
             максимум точных серий — <strong>{{ row.max_exact_hits }}</strong>.
           </li>
         {% else %}
@@ -39,7 +39,7 @@
     </thead>
     <tbody>
       {% for row in board %}
-      <tr class="{% if loop.first %}leader-row{% endif %}">
+      <tr class="{% if loop.first %}leader-row{% endif %} {% if current_user and row.username == current_user.username %}current-user-row{% endif %}">
         <td>{% if loop.first %}👑{% else %}{{ loop.index }}{% endif %}</td>
         <td>{{ row.display_name }}</td>
         <td>{{ row.points }}</td>
