@@ -70,7 +70,7 @@
             {% set is_locked_game = i in locked_games %}
             {% set has_saved_match_score = prediction and saved_scores|length >= i %}
             <div class="match-score-row" data-game-row>
-              <div class="match-title">Матч {{ i }} <span class="mini-lock">{% if is_locked_game %}🔒{% else %}🔓{% endif %}</span></div>
+              <div class="match-title">Матч {{ i }} {% if is_locked_game %}<span class="mini-lock">🔒</span>{% endif %}</div>
               <div class="match-score-inputs">
                 <input type="number" name="game_home_scores" min="0" step="1" value="{{ score_pair[0] }}" class="{% if has_saved_match_score %}saved-prediction-value{% else %}unsaved-prediction-value{% endif %}" aria-label="Матч {{ i }}: голы {{ series.team_a }}" {% if is_closed %}disabled{% elif is_locked_game %}readonly{% endif %} />
                 <span>:</span>
