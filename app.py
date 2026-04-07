@@ -980,7 +980,7 @@ def register_routes(app: Flask) -> None:
             round_labels=ROUND_LABELS,
         )
 
-    @app.get("/admin/predictions")
+    @app.route("/admin/predictions", methods=["GET", "POST"])
     def admin_predictions():
         user = current_user()
         if not user:
@@ -988,6 +988,57 @@ def register_routes(app: Flask) -> None:
         if not user.is_admin:
             flash("Доступ только для администраторов")
             return redirect(url_for("cabinet"))
+
+        if request.method == "POST":
+            action = request.form.get("action", "")
+            if action == "save_prediction":
+                target_user_id_raw = request.form.get("user_id", "")
+                target_series_id_raw = request.form.get("series_id", "")
+                score_raw = request.form.get("series_score", "")
+                try:
+                    target_user_id = int(target_user_id_raw)
+                    target_series_id = int(target_series_id_raw)
+                except ValueError:
+                    flash("Некорректный пользователь или серия")
+                    return redirect(url_for("admin_predictions"))
+
+                if ":" not in score_raw:
+                    flash("Некорректный формат счета серии")
+                    return redirect(url_for("admin_predictions"))
+                left_raw, right_raw = score_raw.split(":", 1)
+                if not left_raw.isdigit() or not right_raw.isdigit():
+                    flash("Счет серии должен содержать только числа")
+                    return redirect(url_for("admin_predictions"))
+
+                wins_a = int(left_raw)
+                wins_b = int(right_raw)
+                if 4 not in (wins_a, wins_b) or min(wins_a, wins_b) < 0 or max(wins_a, wins_b) > 4:
+                    flash("Допустимы только счета формата 4:x или x:4 (где x = 0..3)")
+                    return redirect(url_for("admin_predictions"))
+
+                target_user = User.query.get_or_404(target_user_id)
+                target_series = PlayoffSeries.query.get_or_404(target_series_id)
+                prediction = SeriesPrediction.query.filter_by(user_id=target_user.id, series_id=target_series.id).first()
+                if prediction:
+                    prediction.predicted_wins_a = wins_a
+                    prediction.predicted_wins_b = wins_b
+                    prediction.game_outcomes = ""
+                    prediction.game_scores = ""
+                    flash(f"Прогноз для {target_user.username} обновлен")
+                else:
+                    db.session.add(
+                        SeriesPrediction(
+                            user_id=target_user.id,
+                            series_id=target_series.id,
+                            predicted_wins_a=wins_a,
+                            predicted_wins_b=wins_b,
+                            game_outcomes="",
+                            game_scores="",
+                        )
+                    )
+                    flash(f"Прогноз для {target_user.username} сохранен")
+                db.session.commit()
+                return redirect(url_for("admin_predictions"))
 
         users = User.query.order_by(User.display_name, User.username).all()
         series_list = PlayoffSeries.query.order_by(PlayoffSeries.round_code, PlayoffSeries.conference, PlayoffSeries.id).all()
@@ -1066,6 +1117,13 @@ def register_routes(app: Flask) -> None:
                     return redirect(url_for("admin_users"))
                 target.points_adjustment = adjustment
                 flash(f"Корректировка очков для {target.username} установлена: {adjustment}")
+            elif action == "recalculate":
+                recalculated_raw = sum(score_series_prediction(prediction)["total"] for prediction in target.series_predictions)
+                recalculated_total = recalculated_raw + (target.points_adjustment or 0)
+                flash(
+                    f"Пересчет выполнен для {target.username}: авто {recalculated_raw}, "
+                    f"коррекция {target.points_adjustment or 0}, итог {recalculated_total}"
+                )
             elif action == "delete":
                 Prediction.query.filter_by(user_id=target.id).delete()
                 SeriesPrediction.query.filter_by(user_id=target.id).delete()

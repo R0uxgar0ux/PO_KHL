@@ -29,6 +29,11 @@
         </td>
         <td>
           {% if not u.is_admin %}
+            <form method="post" class="inline-form">
+              <input type="hidden" name="user_id" value="{{ u.id }}" />
+              <input type="hidden" name="action" value="recalculate" />
+              <button type="submit">Пересчитать результат</button>
+            </form>
             {% if not u.is_blocked %}
               <form method="post" class="inline-form">
                 <input type="hidden" name="user_id" value="{{ u.id }}" />

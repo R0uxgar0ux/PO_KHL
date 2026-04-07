@@ -44,7 +44,22 @@
           {% if row.has_prediction %}
             {{ row.prediction.predicted_wins_a }}:{{ row.prediction.predicted_wins_b }}
           {% else %}
-            —
+            <form method="post" class="inline-form">
+              <input type="hidden" name="action" value="save_prediction" />
+              <input type="hidden" name="user_id" value="{{ item.user.id }}" />
+              <input type="hidden" name="series_id" value="{{ row.series.id }}" />
+              <select name="series_score">
+                <option value="4:0">4:0</option>
+                <option value="4:1">4:1</option>
+                <option value="4:2">4:2</option>
+                <option value="4:3">4:3</option>
+                <option value="0:4">0:4</option>
+                <option value="1:4">1:4</option>
+                <option value="2:4">2:4</option>
+                <option value="3:4">3:4</option>
+              </select>
+              <button type="submit">Сохранить прогноз</button>
+            </form>
           {% endif %}
         </td>
         <td>
