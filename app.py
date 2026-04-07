@@ -1019,7 +1019,7 @@ def register_routes(app: Flask) -> None:
             flash("Результаты серии сохранены")
             return redirect(focus_url)
 
-        series_list = sort_series_list(PlayoffSeries.query.all(), conference_first=True)
+        series_list = sort_series_list(PlayoffSeries.query.all())
         results_by_series = {series.id: series_results_snapshot(series) for series in series_list}
         locked_games_by_series = {series.id: parse_locked_games(series.locked_game_indices) for series in series_list}
         return render_template(
