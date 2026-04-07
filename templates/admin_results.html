@@ -7,7 +7,7 @@
   <h3 class="conference-title">{{ conference_labels[conference_code] }}</h3>
   <div class="series-grid">
   {% for series in series_list if series.conference == conference_code %}
-    {% set result = results_by_series.get(series.id, {'wins_a': 4, 'wins_b': 2, 'scores': []}) %}
+    {% set result = results_by_series.get(series.id, {'wins_a': 0, 'wins_b': 0, 'scores': []}) %}
     {% set locked_games = locked_games_by_series.get(series.id, []) %}
     <section class="card series-card-modern series-card-wide" id="series-{{ series.id }}">
       <form method="post" class="prediction-form series-form series-form-horizontal" data-series-id="{{ series.id }}">
@@ -45,15 +45,15 @@
           </div>
         </div>
 
-        <div class="match-score-grid" data-games-block>
+        <div class="match-score-grid admin-match-score-grid" data-games-block>
           {% for i in range(1, 8) %}
-          {% set score_pair = result.scores[i-1] if result.scores|length >= i else (1, 0) %}
+          {% set score_pair = result.scores[i-1] if result.scores|length >= i else (0, 0) %}
           {% set home_for_a = i in [1, 2, 5, 7] %}
           {% set home_team = series.team_a if home_for_a else series.team_b %}
           {% set away_team = series.team_b if home_for_a else series.team_a %}
           {% set home_value = score_pair[0] if home_for_a else score_pair[1] %}
           {% set away_value = score_pair[1] if home_for_a else score_pair[0] %}
-          <div class="match-score-row" data-game-row>
+          <div class="match-score-row admin-match-score-row" data-game-row>
             <div class="match-title">Матч {{ i }} · {{ home_team }} — {{ away_team }}</div>
             <div class="match-score-inputs">
               <input type="number" name="game_home_scores" min="0" step="1" value="{{ home_value }}" aria-label="Матч {{ i }}: голы хозяев ({{ home_team }})" />
@@ -96,17 +96,12 @@
     let av = parseInt(a.value || '0', 10);
     let bv = parseInt(b.value || '0', 10);
 
-    if (av !== 4 && bv !== 4) {
-      if (av >= bv) av = 4;
-      else bv = 4;
-    }
     if (av > 4) av = 4;
     if (bv > 4) bv = 4;
     if (av < 0) av = 0;
     if (bv < 0) bv = 0;
     if (av + bv > 7) {
-      if (av === 4) bv = 3;
-      else av = 3;
+      bv = Math.max(0, 7 - av);
     }
 
     a.value = String(av);

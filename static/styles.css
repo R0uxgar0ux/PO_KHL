@@ -260,6 +260,31 @@ button.danger:hover { background: #2b2b2b; }
   min-width: 0;
 }
 
+.admin-match-score-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.admin-match-score-row {
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.admin-match-score-row .match-title {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.admin-match-score-row .match-score-inputs {
+  grid-template-columns: 64px auto 64px;
+  justify-content: start;
+}
+
+.admin-match-score-row .match-score-inputs input {
+  width: 64px;
+  min-width: 64px;
+  text-align: center;
+}
+
 .lock-buttons-row {
   margin-top: 10px;
   display: flex;
@@ -288,7 +313,16 @@ button.danger:hover { background: #2b2b2b; }
   .scoreline-row.improved { grid-template-columns: 1fr 58px 10px 58px 1fr; gap: 6px; }
   .match-score-row { grid-template-columns: 1fr; }
   .match-title { min-width: auto; }
+  .admin-match-score-grid { grid-template-columns: 1fr; }
 }
 
 .danger-text { color: #b00020; font-weight: 700; }
 
+.saved-prediction-label {
+  font-weight: 700;
+  color: #111;
+}
+
+.saved-prediction-value {
+  font-weight: 700;
+}

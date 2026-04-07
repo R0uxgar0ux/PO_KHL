@@ -753,7 +753,7 @@ def register_routes(app: Flask) -> None:
             return redirect(focus_url)
 
         series_list = PlayoffSeries.query.all()
-        round_order = {"R1": 0, "QF": 1, "SF": 2, "F": 3}
+        round_order = {"F": 0, "SF": 1, "QF": 2, "R1": 3}
         conf_order = {"W": 0, "E": 1}
         series_list.sort(key=lambda s: (round_order.get(s.round_code, 99), conf_order.get(s.conference, 99), s.id))
         prediction_by_series = {p.series_id: p for p in user.series_predictions}
@@ -782,7 +782,6 @@ def register_routes(app: Flask) -> None:
             user_points=user_total_points(user),
             score_details=score_details,
             score_series_prediction=score_series_prediction,
-            series_predictions=SeriesPrediction.query.join(PlayoffSeries).order_by(PlayoffSeries.round_code).all(),
             round_labels=ROUND_LABELS,
         )
 

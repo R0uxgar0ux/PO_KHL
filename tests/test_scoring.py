@@ -444,7 +444,7 @@ def test_admin_predictions_save_keeps_anchor():
             assert response.headers["Location"].endswith(f"/admin/predictions#{anchor}")
 
 
-def test_predictions_page_groups_stage_before_conference():
+def test_predictions_page_shows_late_stages_first():
     app = make_app()
     with app.app_context():
         user = User(username="ord1", password_hash="x", display_name="ord1")
@@ -459,7 +459,7 @@ def test_predictions_page_groups_stage_before_conference():
             response = client.get('/predictions')
             html = response.get_data(as_text=True)
             assert response.status_code == 200
-            assert html.find('1/8 финала') < html.find('1/4 финала')
+            assert html.find('1/4 финала') < html.find('1/8 финала')
 
 
 def test_admin_results_redirects_back_to_series_anchor():

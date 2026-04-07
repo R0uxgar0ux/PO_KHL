@@ -21,23 +21,4 @@
     </tbody>
   </table>
 </section>
-
-<section class="card">
-  <h3>Завершенные серии и прогнозы</h3>
-  {% if not series_predictions %}
-    <p>Пока нет прогнозов по сериям.</p>
-  {% else %}
-    <ul>
-      {% for prediction in series_predictions %}
-        {% set details = score_series_prediction(prediction) %}
-        {% set s = prediction.series %}
-        <li>
-          {{ s.round_label }} · {{ s.team_a }} — {{ s.team_b }} ·
-          {{ prediction.user.display_name }}: {{ prediction.predicted_wins_a }}:{{ prediction.predicted_wins_b }}
-          → {{ details.total }} очк.
-        </li>
-      {% endfor %}
-    </ul>
-  {% endif %}
-</section>
 {% endblock %}
