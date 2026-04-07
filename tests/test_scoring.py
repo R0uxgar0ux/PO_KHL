@@ -522,3 +522,68 @@ def test_admin_results_shows_late_rounds_first_inside_conference():
             html = response.get_data(as_text=True)
             assert response.status_code == 200
             assert html.find("SFX") < html.find("R1X")
+
+
+def test_admin_matches_rejects_same_teams_and_duplicate():
+    app = make_app()
+    with app.app_context():
+        admin = User(username="adminvalid", password_hash="x", display_name="adminvalid", is_admin=True)
+        existing = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="QF", prediction_deadline=datetime(2026, 5, 1, 12, 0))
+        db.session.add_all([admin, existing])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = admin.id
+
+            same_teams = client.post(
+                "/admin/matches",
+                data={
+                    "team_a": "A",
+                    "team_b": "A",
+                    "conference": "W",
+                    "round_code": "QF",
+                    "prediction_deadline": "2026-05-02T12:00",
+                },
+                follow_redirects=True,
+            )
+            assert "Команды серии должны быть разными" in same_teams.get_data(as_text=True)
+
+            duplicate = client.post(
+                "/admin/matches",
+                data={
+                    "team_a": "A",
+                    "team_b": "B",
+                    "conference": "W",
+                    "round_code": "QF",
+                    "prediction_deadline": "2026-05-02T12:00",
+                },
+                follow_redirects=True,
+            )
+            assert "Такая серия уже существует" in duplicate.get_data(as_text=True)
+
+
+def test_admin_matches_rejects_past_deadline():
+    app = make_app()
+    with app.app_context():
+        admin = User(username="adminpast", password_hash="x", display_name="adminpast", is_admin=True)
+        db.session.add(admin)
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = admin.id
+
+            response = client.post(
+                "/admin/matches",
+                data={
+                    "team_a": "X",
+                    "team_b": "Y",
+                    "conference": "W",
+                    "round_code": "SF",
+                    "prediction_deadline": "2020-01-01T12:00",
+                },
+                follow_redirects=True,
+            )
+            html = response.get_data(as_text=True)
+            assert "Дедлайн не может быть в прошлом" in html

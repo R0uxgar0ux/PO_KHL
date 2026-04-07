@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -23,6 +24,7 @@ MATCH_WINNER_POINTS = {"R1": 0, "QF": 0, "SF": 1, "F": 2}
 MATCH_SCORE_POINTS = {"R1": 0, "QF": 0, "SF": 1, "F": 2}
 ROUND_LABELS = {"R1": "1/8 финала", "QF": "1/4 финала", "SF": "1/2 финала", "F": "Финал"}
 CONFERENCE_LABELS = {"W": "Запад", "E": "Восток"}
+ROUND_SORT_PRIORITY = {"F": 0, "SF": 1, "QF": 2, "R1": 3}
 LOGIN_RE = re.compile(r"^[a-zA-Z0-9_]{3,24}$")
 DETAILED_ROUNDS = {"SF", "F"}
 
@@ -110,6 +112,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     if test_config:
         app.config.update(test_config)
 
+    maybe_backup_database_file(app)
     db.init_app(app)
     with app.app_context():
         db.create_all()
@@ -267,6 +270,36 @@ def current_user() -> User | None:
 
 def _sign(value: int) -> int:
     return 1 if value > 0 else -1 if value < 0 else 0
+
+
+def create_database_backup() -> Path | None:
+    if DB_PATH == Path(":memory:") or not DB_PATH.exists():
+        return None
+    backup_dir = BASE_DIR / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup_path = backup_dir / f"khl_playoff-{timestamp}.db"
+    shutil.copy2(DB_PATH, backup_path)
+    return backup_path
+
+
+def maybe_backup_database_file(app: Flask) -> None:
+    if app.config.get("TESTING"):
+        return
+    create_database_backup()
+
+
+def sort_series_list(series_list: list[PlayoffSeries], conference_first: bool = False) -> list[PlayoffSeries]:
+    conf_order = {"W": 0, "E": 1}
+    if conference_first:
+        return sorted(
+            series_list,
+            key=lambda s: (conf_order.get(s.conference, 99), ROUND_SORT_PRIORITY.get(s.round_code, 99), s.id),
+        )
+    return sorted(
+        series_list,
+        key=lambda s: (ROUND_SORT_PRIORITY.get(s.round_code, 99), conf_order.get(s.conference, 99), s.id),
+    )
 
 
 def is_valid_login(value: str) -> bool:
@@ -752,10 +785,7 @@ def register_routes(app: Flask) -> None:
             db.session.commit()
             return redirect(focus_url)
 
-        series_list = PlayoffSeries.query.all()
-        round_order = {"F": 0, "SF": 1, "QF": 2, "R1": 3}
-        conf_order = {"W": 0, "E": 1}
-        series_list.sort(key=lambda s: (round_order.get(s.round_code, 99), conf_order.get(s.conference, 99), s.id))
+        series_list = sort_series_list(PlayoffSeries.query.all())
         prediction_by_series = {p.series_id: p for p in user.series_predictions}
         locked_games_by_series = {series.id: parse_locked_games(series.locked_game_indices) for series in series_list}
         return render_template(
@@ -814,6 +844,20 @@ def register_routes(app: Flask) -> None:
         if not user or not user.is_admin:
             return redirect(url_for("cabinet"))
         return render_template("admin_home.html")
+
+    @app.post("/admin/backup")
+    def admin_backup():
+        user = current_user()
+        if not user:
+            return redirect(url_for("login"))
+        if not user.is_admin:
+            flash("Доступ только для администраторов")
+            return redirect(url_for("cabinet"))
+        backup_path = create_database_backup()
+        if not backup_path:
+            flash("Не удалось создать бэкап базы")
+            return redirect(url_for("admin_home"))
+        return send_file(backup_path, as_attachment=True, download_name=backup_path.name)
 
     @app.route("/admin/results", methods=["GET", "POST"])
     def admin_results():
@@ -913,10 +957,7 @@ def register_routes(app: Flask) -> None:
             flash("Результаты серии сохранены")
             return redirect(focus_url)
 
-        series_list = PlayoffSeries.query.all()
-        round_order = {"F": 0, "SF": 1, "QF": 2, "R1": 3}
-        conf_order = {"W": 0, "E": 1}
-        series_list.sort(key=lambda s: (conf_order.get(s.conference, 99), round_order.get(s.round_code, 99), s.id))
+        series_list = sort_series_list(PlayoffSeries.query.all(), conference_first=True)
         results_by_series = {series.id: series_results_snapshot(series) for series in series_list}
         locked_games_by_series = {series.id: parse_locked_games(series.locked_game_indices) for series in series_list}
         return render_template(
@@ -959,8 +1000,23 @@ def register_routes(app: Flask) -> None:
             if not team_a or not team_b or not deadline_raw:
                 flash("Заполните команды и дедлайн")
                 return redirect(url_for("admin_matches"))
+            if team_a == team_b:
+                flash("Команды серии должны быть разными")
+                return redirect(url_for("admin_matches"))
+            duplicate = PlayoffSeries.query.filter_by(
+                team_a=team_a,
+                team_b=team_b,
+                conference=conference,
+                round_code=round_code,
+            ).first()
+            if duplicate:
+                flash("Такая серия уже существует")
+                return redirect(url_for("admin_matches"))
 
             deadline = datetime.strptime(deadline_raw, "%Y-%m-%dT%H:%M")
+            if deadline < datetime.now():
+                flash("Дедлайн не может быть в прошлом")
+                return redirect(url_for("admin_matches"))
             db.session.add(
                 PlayoffSeries(
                     team_a=team_a,
@@ -974,10 +1030,7 @@ def register_routes(app: Flask) -> None:
             flash("Серия добавлена")
             return redirect(url_for("admin_matches"))
 
-        series_list = PlayoffSeries.query.all()
-        round_order = {"F": 0, "SF": 1, "QF": 2, "R1": 3}
-        conf_order = {"W": 0, "E": 1}
-        series_list.sort(key=lambda s: (round_order.get(s.round_code, 99), conf_order.get(s.conference, 99), s.id))
+        series_list = sort_series_list(PlayoffSeries.query.all())
         return render_template(
             "admin_matches.html",
             series_list=series_list,
@@ -1051,7 +1104,7 @@ def register_routes(app: Flask) -> None:
                 return redirect(destination)
 
         users = User.query.order_by(User.display_name, User.username).all()
-        series_list = PlayoffSeries.query.order_by(PlayoffSeries.round_code, PlayoffSeries.conference, PlayoffSeries.id).all()
+        series_list = sort_series_list(PlayoffSeries.query.all())
 
         rows: list[dict] = []
         for u in users:

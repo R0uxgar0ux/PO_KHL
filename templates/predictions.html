@@ -76,7 +76,11 @@
                 <span>:</span>
                 <input type="number" name="game_away_scores" min="0" step="1" value="{{ score_pair[1] }}" class="{% if has_saved_match_score %}saved-prediction-value{% else %}unsaved-prediction-value{% endif %}" aria-label="Матч {{ i }}: голы {{ series.team_b }}" {% if is_closed %}disabled{% elif is_locked_game %}readonly{% endif %} />
               </div>
-              {% if is_locked_game %}<div class="muted">прогноз на матч заблокирован</div>{% endif %}
+              {% if is_locked_game %}
+                <div class="muted">прогноз на матч заблокирован</div>
+              {% elif not is_closed %}
+                <div class="muted">можно менять до дедлайна/блокировки админом</div>
+              {% endif %}
             </div>
             {% endfor %}
           </div>

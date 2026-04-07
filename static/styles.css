@@ -211,6 +211,16 @@ button.danger:hover { background: #2b2b2b; }
   gap: 6px;
 }
 
+.series-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.preset-btn {
+  padding: 4px 8px;
+}
+
 .scoreline-row.improved {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) 72px 16px 72px minmax(120px, 1fr);
