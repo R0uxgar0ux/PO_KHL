@@ -995,6 +995,8 @@ def register_routes(app: Flask) -> None:
                 target_user_id_raw = request.form.get("user_id", "")
                 target_series_id_raw = request.form.get("series_id", "")
                 score_raw = request.form.get("series_score", "")
+                anchor_raw = request.form.get("anchor", "").strip()
+                anchor = anchor_raw if re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", anchor_raw) else ""
                 try:
                     target_user_id = int(target_user_id_raw)
                     target_series_id = int(target_series_id_raw)
@@ -1038,7 +1040,10 @@ def register_routes(app: Flask) -> None:
                     )
                     flash(f"Прогноз для {target_user.username} сохранен")
                 db.session.commit()
-                return redirect(url_for("admin_predictions"))
+                destination = url_for("admin_predictions")
+                if anchor:
+                    destination = f"{destination}#{anchor}"
+                return redirect(destination)
 
         users = User.query.order_by(User.display_name, User.username).all()
         series_list = PlayoffSeries.query.order_by(PlayoffSeries.round_code, PlayoffSeries.conference, PlayoffSeries.id).all()

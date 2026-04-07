@@ -4,7 +4,7 @@
 <p>Здесь видно, что начислено автоматически, есть ли пропущенные прогнозы и нужна ли ручная коррекция.</p>
 
 {% for item in users_rows %}
-<section class="card">
+<section class="card" id="user-{{ item.user.id }}">
   <h3>{{ item.user.display_name }} <span class="muted">(@{{ item.user.username }})</span></h3>
   <p>
     Начислено (авто): <strong>{{ item.raw_points }}</strong> ·
@@ -36,7 +36,7 @@
     </thead>
     <tbody>
       {% for row in item.rows %}
-      <tr>
+      <tr id="series-row-{{ item.user.id }}-{{ row.series.id }}">
         <td>{{ row.series.round_label }}</td>
         <td>{{ row.series.conference_label }}</td>
         <td>{{ row.series.team_a }} — {{ row.series.team_b }}</td>
@@ -48,6 +48,7 @@
               <input type="hidden" name="action" value="save_prediction" />
               <input type="hidden" name="user_id" value="{{ item.user.id }}" />
               <input type="hidden" name="series_id" value="{{ row.series.id }}" />
+              <input type="hidden" name="anchor" value="series-row-{{ item.user.id }}-{{ row.series.id }}" />
               <select name="series_score">
                 <option value="4:0">4:0</option>
                 <option value="4:1">4:1</option>

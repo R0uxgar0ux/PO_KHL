@@ -415,6 +415,35 @@ def test_admin_predictions_page_shows_missing_predictions():
             assert 'Нет прогноза' in html
 
 
+def test_admin_predictions_save_keeps_anchor():
+    app = make_app()
+    with app.app_context():
+        admin = User(username="adminanchorpred", password_hash="x", display_name="adminanchorpred", is_admin=True)
+        user = User(username="targetpred", password_hash="x", display_name="targetpred")
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="R1")
+        db.session.add_all([admin, user, series])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = admin.id
+
+            anchor = f"series-row-{user.id}-{series.id}"
+            response = client.post(
+                "/admin/predictions",
+                data={
+                    "action": "save_prediction",
+                    "user_id": str(user.id),
+                    "series_id": str(series.id),
+                    "series_score": "4:2",
+                    "anchor": anchor,
+                },
+                follow_redirects=False,
+            )
+            assert response.status_code == 302
+            assert response.headers["Location"].endswith(f"/admin/predictions#{anchor}")
+
+
 def test_predictions_page_groups_stage_before_conference():
     app = make_app()
     with app.app_context():
