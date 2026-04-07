@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Админка</h2>
+<div class="grid">
+  <a class="card admin-link" href="{{ url_for('admin_matches') }}">Серии и матчи ПО</a>
+  <a class="card admin-link" href="{{ url_for('admin_results') }}">Итоговые результаты матчей</a>
+  <a class="card admin-link" href="{{ url_for('admin_users') }}">Пользователи и модерация</a>
+  <a class="card admin-link" href="{{ url_for('admin_predictions') }}">Проверка прогнозов</a>
+</div>
+{% endblock %}
