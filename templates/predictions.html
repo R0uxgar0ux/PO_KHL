@@ -38,13 +38,23 @@
           <label>Счёт серии</label>
           <div class="scoreline-row improved">
             <span class="team-name-wrap"><span class="team-name-with-logo"><img class="team-logo" src="{{ team_logo_url(series.team_a) }}" alt="" loading="lazy" /><span>{{ series.team_a }}</span></span></span>
-            <select name="predicted_wins_a" data-wins-a class="{% if prediction %}saved-prediction-value{% endif %}" {% if is_closed %}disabled{% endif %}>
+            <select
+              name="predicted_wins_a"
+              data-wins-a
+              class="{% if prediction %}saved-prediction-value{% else %}unsaved-prediction-value{% endif %}"
+              {% if is_closed %}disabled{% endif %}
+            >
               {% for n in range(0,5) %}
                 <option value="{{ n }}" {% if prediction and prediction.predicted_wins_a == n %}selected{% elif not prediction and n==0 %}selected{% endif %}>{{ n }}</option>
               {% endfor %}
             </select>
             <strong>:</strong>
-            <select name="predicted_wins_b" data-wins-b class="{% if prediction %}saved-prediction-value{% endif %}" {% if is_closed %}disabled{% endif %}>
+            <select
+              name="predicted_wins_b"
+              data-wins-b
+              class="{% if prediction %}saved-prediction-value{% else %}unsaved-prediction-value{% endif %}"
+              {% if is_closed %}disabled{% endif %}
+            >
               {% for n in range(0,5) %}
                 <option value="{{ n }}" {% if prediction and prediction.predicted_wins_b == n %}selected{% elif not prediction and n==0 %}selected{% endif %}>{{ n }}</option>
               {% endfor %}

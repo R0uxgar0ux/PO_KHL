@@ -325,4 +325,12 @@ button.danger:hover { background: #2b2b2b; }
 
 .saved-prediction-value {
   font-weight: 700;
+  color: #111;
+  border-color: #111;
+}
+
+.unsaved-prediction-value {
+  font-weight: 400;
+  color: #8b93a1;
+  border-color: #cfd5df;
 }
