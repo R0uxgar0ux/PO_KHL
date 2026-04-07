@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Текущие результаты</h2>
+<p>Ваши очки: <strong>{{ user_points }}</strong></p>
+
+
+<section class="card">
+  <h3>Турнирная таблица прогнозистов</h3>
+  <table>
+    <thead>
+      <tr><th>Участник</th><th>Очки</th><th>Точных серий</th></tr>
+    </thead>
+    <tbody>
+      {% for row in board %}
+      <tr>
+        <td>{{ row.display_name }}</td>
+        <td>{{ row.points }}</td>
+        <td>{{ row.exact_hits }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
