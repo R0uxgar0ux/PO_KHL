@@ -752,7 +752,10 @@ def register_routes(app: Flask) -> None:
             db.session.commit()
             return redirect(focus_url)
 
-        series_list = PlayoffSeries.query.order_by(PlayoffSeries.round_code, PlayoffSeries.conference, PlayoffSeries.id).all()
+        series_list = PlayoffSeries.query.all()
+        round_order = {"R1": 0, "QF": 1, "SF": 2, "F": 3}
+        conf_order = {"W": 0, "E": 1}
+        series_list.sort(key=lambda s: (round_order.get(s.round_code, 99), conf_order.get(s.conference, 99), s.id))
         prediction_by_series = {p.series_id: p for p in user.series_predictions}
         locked_games_by_series = {series.id: parse_locked_games(series.locked_game_indices) for series in series_list}
         return render_template(
@@ -826,12 +829,13 @@ def register_routes(app: Flask) -> None:
             action = request.form.get("action", "save_results")
             series_id = int(request.form["series_id"])
             series = PlayoffSeries.query.get_or_404(series_id)
+            focus_url = f"{url_for('admin_results')}#series-{series.id}"
 
             if action == "toggle_lock":
                 game_index = int(request.form["game_index"])
                 if game_index < 1 or game_index > 7:
                     flash("Некорректный номер матча")
-                    return redirect(url_for("admin_results"))
+                    return redirect(focus_url)
                 locked_games = parse_locked_games(series.locked_game_indices)
                 if game_index in locked_games:
                     locked_games.remove(game_index)
@@ -841,39 +845,39 @@ def register_routes(app: Flask) -> None:
                     flash(f"Матч {game_index}: прогноз заблокирован")
                 series.locked_game_indices = serialize_locked_games(locked_games)
                 db.session.commit()
-                return redirect(url_for("admin_results"))
+                return redirect(focus_url)
 
             wins_a = int(request.form["wins_a"])
             wins_b = int(request.form["wins_b"])
             if 4 not in (wins_a, wins_b):
                 flash("Серия играется до 4 побед — одна из команд должна иметь 4")
-                return redirect(url_for("admin_results"))
+                return redirect(focus_url)
             if wins_a < 0 or wins_b < 0 or wins_a > 4 or wins_b > 4:
                 flash("Некорректный счет серии")
-                return redirect(url_for("admin_results"))
+                return redirect(focus_url)
 
             games_count = wins_a + wins_b
             if games_count > 7:
                 flash("В серии максимум 7 матчей")
-                return redirect(url_for("admin_results"))
+                return redirect(focus_url)
 
             raw_home_scores = request.form.getlist("game_home_scores")[:games_count]
             raw_away_scores = request.form.getlist("game_away_scores")[:games_count]
             if len(raw_home_scores) != games_count or len(raw_away_scores) != games_count:
                 flash("Заполните точные счета всех сыгранных матчей")
-                return redirect(url_for("admin_results"))
+                return redirect(focus_url)
 
             outcomes: list[str] = []
             matches_to_save: list[tuple[str, str, int, int]] = []
             for idx, (raw_home, raw_away) in enumerate(zip(raw_home_scores, raw_away_scores), start=1):
                 if not raw_home.isdigit() or not raw_away.isdigit():
                     flash(f"Матч {idx}: укажите счет неотрицательными числами")
-                    return redirect(url_for("admin_results"))
+                    return redirect(focus_url)
                 home_score = int(raw_home)
                 away_score = int(raw_away)
                 if home_score == away_score:
                     flash(f"Матч {idx}: в плей-офф не может быть ничьи")
-                    return redirect(url_for("admin_results"))
+                    return redirect(focus_url)
 
                 home_team, away_team = game_teams_by_index(series, idx)
                 if home_team == series.team_a:
@@ -887,7 +891,7 @@ def register_routes(app: Flask) -> None:
             valid_sequence, message = validate_outcomes_sequence(outcomes, wins_a, wins_b)
             if not valid_sequence:
                 flash(message)
-                return redirect(url_for("admin_results"))
+                return redirect(focus_url)
 
             Match.query.filter_by(series_id=series.id).delete()
             base_kickoff = datetime.now().replace(hour=19, minute=30, second=0, microsecond=0)
@@ -908,7 +912,7 @@ def register_routes(app: Flask) -> None:
 
             db.session.commit()
             flash("Результаты серии сохранены")
-            return redirect(url_for("admin_results"))
+            return redirect(focus_url)
 
         series_list = PlayoffSeries.query.order_by(PlayoffSeries.round_code, PlayoffSeries.conference, PlayoffSeries.id).all()
         results_by_series = {series.id: series_results_snapshot(series) for series in series_list}
@@ -1012,12 +1016,22 @@ def register_routes(app: Flask) -> None:
                         "has_prediction": False,
                     })
 
+            stage_points = {"R1": 0, "QF": 0, "SF": 0, "F": 0}
+            missing_count = 0
+            for row in user_rows:
+                if row["has_prediction"]:
+                    stage_points[row["series"].round_code] = stage_points.get(row["series"].round_code, 0) + row["points"]
+                else:
+                    missing_count += 1
+
             rows.append({
                 "user": u,
                 "rows": user_rows,
                 "raw_points": raw_points,
                 "adjustment": u.points_adjustment or 0,
                 "total_points": raw_points + (u.points_adjustment or 0),
+                "stage_points": stage_points,
+                "missing_count": missing_count,
             })
 
         return render_template("admin_predictions.html", users_rows=rows)

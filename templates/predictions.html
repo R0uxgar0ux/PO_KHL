@@ -4,10 +4,13 @@
 <p>Профиль: <strong>{{ current_user.display_name }}</strong> (логин: {{ current_user.username }}).</p>
 <p>До полуфиналов прогнозируется только счёт серии. Начиная с 1/2 финала можно добавлять точные счета матчей (+1 за каждый точный счёт).</p>
 
-{% for conference_code in ['W', 'E'] %}
-  <h3 class="conference-title">{{ conference_labels[conference_code] }}</h3>
-  <div class="series-grid">
-  {% for series in series_list if series.conference == conference_code %}
+{% set round_order = ['R1', 'QF', 'SF', 'F'] %}
+{% for round_code in round_order %}
+  <h3 class="conference-title">{{ round_labels.get(round_code, round_code) }}</h3>
+  {% for conference_code in ['W', 'E'] %}
+    <h4 class="conference-title">{{ conference_labels[conference_code] }}</h4>
+    <div class="series-grid">
+    {% for series in series_list if series.round_code == round_code and series.conference == conference_code %}
     {% set prediction = prediction_by_series.get(series.id) %}
     {% set is_closed = series.prediction_deadline and now > series.prediction_deadline %}
     {% set is_detailed = series.round_code in detailed_rounds %}
@@ -74,10 +77,11 @@
         <button type="submit" {% if is_closed %}disabled{% endif %}>Сохранить</button>
       </form>
     </section>
-  {% else %}
-    <p>Пока нет серий в этой конференции.</p>
+    {% else %}
+      <p>Пока нет серий на этой стадии в конференции {{ conference_labels[conference_code] }}.</p>
+    {% endfor %}
+    </div>
   {% endfor %}
-  </div>
 {% endfor %}
 
 <script>

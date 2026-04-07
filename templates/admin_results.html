@@ -9,7 +9,7 @@
   {% for series in series_list if series.conference == conference_code %}
     {% set result = results_by_series.get(series.id, {'wins_a': 4, 'wins_b': 2, 'scores': []}) %}
     {% set locked_games = locked_games_by_series.get(series.id, []) %}
-    <section class="card series-card-modern series-card-wide">
+    <section class="card series-card-modern series-card-wide" id="series-{{ series.id }}">
       <form method="post" class="prediction-form series-form series-form-horizontal" data-series-id="{{ series.id }}">
         <input type="hidden" name="series_id" value="{{ series.id }}" />
         <input type="hidden" name="action" value="save_results" />

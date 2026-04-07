@@ -413,3 +413,46 @@ def test_admin_predictions_page_shows_missing_predictions():
             html = response.get_data(as_text=True)
             assert 'Проверка прогнозов пользователей' in html
             assert 'Нет прогноза' in html
+
+
+def test_predictions_page_groups_stage_before_conference():
+    app = make_app()
+    with app.app_context():
+        user = User(username="ord1", password_hash="x", display_name="ord1")
+        s_qf = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="QF")
+        s_r1 = PlayoffSeries(team_a="C", team_b="D", conference="W", round_code="R1")
+        db.session.add_all([user, s_qf, s_r1])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = user.id
+            response = client.get('/predictions')
+            html = response.get_data(as_text=True)
+            assert response.status_code == 200
+            assert html.find('1/8 финала') < html.find('1/4 финала')
+
+
+def test_admin_results_redirects_back_to_series_anchor():
+    app = make_app()
+    with app.app_context():
+        admin = User(username="admanchor", password_hash="x", display_name="admanchor", is_admin=True)
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="R1")
+        db.session.add_all([admin, series])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = admin.id
+
+            response = client.post(
+                '/admin/results',
+                data={
+                    'action': 'toggle_lock',
+                    'series_id': str(series.id),
+                    'game_index': '1',
+                },
+                follow_redirects=False,
+            )
+            assert response.status_code == 302
+            assert response.headers['Location'].endswith(f'/admin/results#series-{series.id}')
