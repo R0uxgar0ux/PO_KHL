@@ -587,3 +587,41 @@ def test_admin_matches_rejects_past_deadline():
             )
             html = response.get_data(as_text=True)
             assert "Дедлайн не может быть в прошлом" in html
+
+
+def test_results_page_shows_leader_highlight_and_insights():
+    app = make_app()
+    with app.app_context():
+        leader_user = User(username="leader_u", password_hash="x", display_name="Leader")
+        other_user = User(username="other_u", password_hash="x", display_name="Other")
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="R1")
+        db.session.add_all([leader_user, other_user, series])
+        db.session.flush()
+
+        from app import Match
+
+        db.session.add_all(
+            [
+                Match(series_id=series.id, home_team="A", away_team="B", kickoff=datetime(2026, 3, 1, 12, 0), home_score=2, away_score=1),
+                Match(series_id=series.id, home_team="A", away_team="B", kickoff=datetime(2026, 3, 2, 12, 0), home_score=3, away_score=1),
+                Match(series_id=series.id, home_team="B", away_team="A", kickoff=datetime(2026, 3, 3, 12, 0), home_score=1, away_score=2),
+                Match(series_id=series.id, home_team="B", away_team="A", kickoff=datetime(2026, 3, 4, 12, 0), home_score=2, away_score=3),
+            ]
+        )
+        db.session.add_all(
+            [
+                SeriesPrediction(user_id=leader_user.id, series_id=series.id, predicted_wins_a=4, predicted_wins_b=0, game_outcomes="", game_scores=""),
+                SeriesPrediction(user_id=other_user.id, series_id=series.id, predicted_wins_a=4, predicted_wins_b=3, game_outcomes="", game_scores=""),
+            ]
+        )
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = leader_user.id
+            response = client.get("/results")
+            html = response.get_data(as_text=True)
+            assert response.status_code == 200
+            assert "Факты по текущему ПО" in html
+            assert "👑" in html
+            assert "Leader" in html

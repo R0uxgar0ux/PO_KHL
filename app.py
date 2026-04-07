@@ -476,6 +476,60 @@ def leaderboard() -> list[dict]:
     return sorted(result, key=lambda item: (item["points"], item["exact_hits"], item["display_name"]), reverse=True)
 
 
+def build_results_insights(board: list[dict]) -> dict:
+    total_players = len(board)
+    leader = board[0] if board else None
+    second = board[1] if len(board) > 1 else None
+
+    avg_points = round(sum(row["points"] for row in board) / total_players, 2) if total_players else 0.0
+    points_gap = (leader["points"] - second["points"]) if leader and second else 0
+
+    stage_order = ["F", "SF", "QF", "R1"]
+    users = User.query.all()
+    stage_rows: list[dict] = []
+    for stage_code in stage_order:
+        finished_series = [s for s in PlayoffSeries.query.filter_by(round_code=stage_code).all() if series_actual(s)["finished"]]
+        if not finished_series:
+            continue
+
+        leader_name = "—"
+        leader_points = 0
+        exact_hits_max = 0
+        for user in users:
+            stage_points = 0
+            stage_exact = 0
+            for prediction in user.series_predictions:
+                if prediction.series.round_code != stage_code:
+                    continue
+                stage_points += score_series_prediction(prediction)["total"]
+                actual = series_actual(prediction.series)
+                if actual["finished"] and prediction.predicted_wins_a == actual["wins_a"] and prediction.predicted_wins_b == actual["wins_b"]:
+                    stage_exact += 1
+            if stage_points > leader_points:
+                leader_points = stage_points
+                leader_name = user.display_name
+            exact_hits_max = max(exact_hits_max, stage_exact)
+
+        stage_rows.append(
+            {
+                "round_code": stage_code,
+                "round_label": ROUND_LABELS.get(stage_code, stage_code),
+                "finished_series_count": len(finished_series),
+                "leader_name": leader_name,
+                "leader_points": leader_points,
+                "max_exact_hits": exact_hits_max,
+            }
+        )
+
+    return {
+        "total_players": total_players,
+        "leader": leader,
+        "average_points": avg_points,
+        "gap_to_second": points_gap,
+        "stage_rows": stage_rows,
+    }
+
+
 def user_rank(user_id: int) -> int:
     for idx, row in enumerate(leaderboard(), start=1):
         if row["user_id"] == user_id:
@@ -804,15 +858,17 @@ def register_routes(app: Flask) -> None:
         user = current_user()
         if not user:
             return redirect(url_for("login"))
+        board = leaderboard()
         finished_matches = Match.query.filter(Match.home_score.isnot(None)).order_by(Match.kickoff).all()
         return render_template(
             "results.html",
             finished_matches=finished_matches,
-            board=leaderboard(),
+            board=board,
             user_points=user_total_points(user),
             score_details=score_details,
             score_series_prediction=score_series_prediction,
             round_labels=ROUND_LABELS,
+            insights=build_results_insights(board),
         )
 
     @app.get("/bracket")

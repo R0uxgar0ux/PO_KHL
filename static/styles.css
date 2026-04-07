@@ -349,3 +349,13 @@ button.danger:hover { background: #2b2b2b; }
   color: #8b93a1;
   border-color: #cfd5df;
 }
+
+.leaderboard-table th,
+.leaderboard-table td {
+  padding: 10px 12px;
+  font-size: 18px;
+}
+
+.leader-row {
+  background: #fff6cf;
+}
