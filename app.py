@@ -749,7 +749,12 @@ def _is_khl_event(event: dict) -> bool:
         return True
 
     league_name = (event.get("strLeague") or "").lower()
-    if "khl" in league_name or "kontinental hockey league" in league_name:
+    if (
+        "khl" in league_name
+        or "континент" in league_name
+        or "кхл" in league_name
+        or "kontinental hockey league" in league_name
+    ):
         return True
 
     home_team = (event.get("strHomeTeam") or "").lower()
@@ -830,7 +835,7 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
     successful_calls = 0
     diagnostics_calls: list[dict] = []
 
-    all_by_day: list[dict] = []
+    all_by_day: list[tuple[dict, bool]] = []
     start_date = (now_utc - window).date()
     end_date = (now_utc + window).date()
     current = start_date
@@ -838,12 +843,12 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
         day_events_league, ok_league, trace_league = _sportsdb_get("eventsday.php", {"d": current.isoformat(), "l": "Russian KHL"})
         diagnostics_calls.append(trace_league)
         successful_calls += int(ok_league)
-        day_events = day_events_league
+        day_events = [(item, True) for item in day_events_league]
         if not day_events_league:
             day_events_sport, ok_sport, trace_sport = _sportsdb_get("eventsday.php", {"d": current.isoformat(), "s": "Hockey"})
             diagnostics_calls.append(trace_sport)
             successful_calls += int(ok_sport)
-            day_events = day_events_sport
+            day_events = [(item, False) for item in day_events_sport]
         all_by_day.extend(day_events)
         current += timedelta(days=1)
 
@@ -853,13 +858,13 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
         past_events, ok_past, trace_past = _sportsdb_get("eventspastleague.php", {"id": KHL_LEAGUE_ID})
         diagnostics_calls.extend([trace_next, trace_past])
         successful_calls += int(ok_next) + int(ok_past)
-        all_by_day.extend(next_events)
-        all_by_day.extend(past_events)
+        all_by_day.extend((item, True) for item in next_events)
+        all_by_day.extend((item, True) for item in past_events)
 
     seen_ids: set[str] = set()
     all_events: list[dict] = []
-    for raw_event in all_by_day:
-        if not _is_khl_event(raw_event):
+    for raw_event, trusted_khl in all_by_day:
+        if not trusted_khl and not _is_khl_event(raw_event):
             continue
         event_id = str(raw_event.get("idEvent") or "")
         if event_id and event_id in seen_ids:
@@ -867,6 +872,19 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
         if event_id:
             seen_ids.add(event_id)
         all_events.append(_normalize_live_event(raw_event, now_utc))
+
+    if not all_events:
+        next_events, ok_next, trace_next = _sportsdb_get("eventsnextleague.php", {"id": KHL_LEAGUE_ID})
+        past_events, ok_past, trace_past = _sportsdb_get("eventspastleague.php", {"id": KHL_LEAGUE_ID})
+        diagnostics_calls.extend([trace_next, trace_past])
+        successful_calls += int(ok_next) + int(ok_past)
+        for raw_event in next_events + past_events:
+            event_id = str(raw_event.get("idEvent") or "")
+            if event_id and event_id in seen_ids:
+                continue
+            if event_id:
+                seen_ids.add(event_id)
+            all_events.append(_normalize_live_event(raw_event, now_utc))
 
     for event in all_events:
         dt = event["datetime_utc"]
