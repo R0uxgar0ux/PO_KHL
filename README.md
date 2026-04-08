@@ -42,6 +42,26 @@ docker compose up -d --build
 
 Сайт будет доступен по адресу `http://<VPS_IP>:5000`.
 
+### Если `docker compose build` падает на `pip install` (Temporary failure in name resolution)
+- В `docker-compose.yml` уже добавлены:
+  - `build.network: host` (берёт DNS хоста при сборке);
+  - `dns: [1.1.1.1, 8.8.8.8]` для контейнера;
+  - `PIP_INDEX_URL=https://pypi.org/simple`.
+- Если проблема сохраняется, проверьте DNS на самом сервере:
+  ```bash
+  cat /etc/resolv.conf
+  getent hosts pypi.org
+  ```
+- Для Docker daemon можно явно прописать DNS в `/etc/docker/daemon.json` и перезапустить Docker:
+  ```json
+  {
+    "dns": ["1.1.1.1", "8.8.8.8"]
+  }
+  ```
+  ```bash
+  sudo systemctl restart docker
+  ```
+
 ## Тесты
 ```bash
 pytest
