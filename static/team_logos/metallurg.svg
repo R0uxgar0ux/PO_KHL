@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80" role="img" aria-label="МГ">
+  <circle cx="40" cy="40" r="38" fill="white" stroke="#d7a000" stroke-width="4"/>
+  <circle cx="40" cy="40" r="30" fill="#d7a000"/>
+  <text x="40" y="46" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="white" font-weight="700">МГ</text>
+</svg>

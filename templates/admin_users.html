@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Модерация пользователей</h2>
+<p>Здесь можно блокировать, разблокировать и удалять обычных пользователей.</p>
+
+<section class="card">
+  <table>
+    <thead>
+      <tr><th>Отображаемое имя</th><th>Логин</th><th>Роль</th><th>Статус</th><th>Коррекция очков</th><th>Действия</th></tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.display_name }}</td>
+        <td>{{ u.username }}</td>
+        <td>{% if u.is_admin %}Администратор{% else %}Пользователь{% endif %}</td>
+        <td>{% if u.is_blocked %}Заблокирован{% else %}Активен{% endif %}</td>
+        <td>
+          {% if not u.is_admin %}
+            <form method="post" class="inline-form">
+              <input type="hidden" name="user_id" value="{{ u.id }}" />
+              <input type="hidden" name="action" value="set_adjustment" />
+              <input type="number" name="points_adjustment" value="{{ u.points_adjustment or 0 }}" step="1" style="width:90px" />
+              <button type="submit">Сохранить</button>
+            </form>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td>
+          {% if not u.is_admin %}
+            <form method="post" class="inline-form">
+              <input type="hidden" name="user_id" value="{{ u.id }}" />
+              <input type="hidden" name="action" value="recalculate" />
+              <button type="submit">Пересчитать результат</button>
+            </form>
+            {% if not u.is_blocked %}
+              <form method="post" class="inline-form">
+                <input type="hidden" name="user_id" value="{{ u.id }}" />
+                <input type="hidden" name="action" value="block" />
+                <button type="submit" class="danger">Блок</button>
+              </form>
+            {% else %}
+              <form method="post" class="inline-form">
+                <input type="hidden" name="user_id" value="{{ u.id }}" />
+                <input type="hidden" name="action" value="unblock" />
+                <button type="submit">Разблок</button>
+              </form>
+            {% endif %}
+            <form method="post" class="inline-form" onsubmit="return confirm('Удалить пользователя и его прогнозы?');">
+              <input type="hidden" name="user_id" value="{{ u.id }}" />
+              <input type="hidden" name="action" value="delete" />
+              <button type="submit" class="danger">Удалить</button>
+            </form>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

@@ -1,0 +1,18 @@
+{
+  "name": "po_khl",
+  "version": "1.0.0",
+  "description": "Мини-приложение на Flask для компании друзей: - личный кабинет пользователя (профиль, статистика, место в таблице); - отдельная страница прогнозов по сериям; - отдельная страница результатов и лидерборда; - отдельная страница дерева ПО с сериями и счетами; - админ-функции для управления сериями, дедлайнами прогнозов, результатами и пользователями.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "build:ts": "tsc -p tsconfig.json",
+    "test:ts": "npm run build:ts && node --test ts/tests/scoring.test.js",
+    "example:ts": "npm run build:ts && node dist/ts/examples/exampleData.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
