@@ -757,10 +757,11 @@ def test_live_team_name_translation_to_russian():
 
 
 def test_live_event_detection_by_league_name_and_forced_live():
-    assert _is_khl_event({"idLeague": "4920"}) is True
-    assert _is_khl_event({"strLeague": "Russian KHL"}) is True
-    assert _is_khl_event({"strHomeTeam": "Avangard Omsk", "strAwayTeam": "CSKA Moscow"}) is True
-    assert _is_khl_event({"strLeague": "NHL"}) is False
+    assert _is_khl_event({"idLeague": "4920", "strSport": "Ice Hockey"}) is True
+    assert _is_khl_event({"strLeague": "Russian KHL", "strSport": "Ice Hockey"}) is True
+    assert _is_khl_event({"strHomeTeam": "Avangard Omsk", "strAwayTeam": "CSKA Moscow", "strSport": "Ice Hockey"}) is True
+    assert _is_khl_event({"strLeague": "NHL", "strSport": "Ice Hockey"}) is False
+    assert _is_khl_event({"idLeague": "4920", "strSport": "Soccer"}) is False
 
     event = _normalize_live_event(
         {"strHomeTeam": "Avangard Omsk", "strAwayTeam": "CSKA Moscow", "strStatus": "", "dateEvent": "2026-04-08", "strTime": "12:00:00"},

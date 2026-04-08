@@ -744,6 +744,10 @@ def _normalize_team_name_ru(name: str | None) -> str:
 
 
 def _is_khl_event(event: dict) -> bool:
+    sport = (event.get("strSport") or "").lower()
+    if "hockey" not in sport:
+        return False
+
     league_id = str(event.get("idLeague") or "").strip()
     if league_id == KHL_LEAGUE_ID:
         return True
@@ -863,8 +867,8 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
 
     seen_ids: set[str] = set()
     all_events: list[dict] = []
-    for raw_event, trusted_khl in all_by_day:
-        if not trusted_khl and not _is_khl_event(raw_event):
+    for raw_event, _trusted_khl in all_by_day:
+        if not _is_khl_event(raw_event):
             continue
         event_id = str(raw_event.get("idEvent") or "")
         if event_id and event_id in seen_ids:
