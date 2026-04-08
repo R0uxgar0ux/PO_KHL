@@ -3,6 +3,25 @@
 <section class="card live-header-card">
   <h2>LIVE-центр КХЛ</h2>
   <p class="muted">Данные: TheSportsDB (бесплатный API), время показано в МСК.</p>
+  {% if (current_user and current_user.is_admin) or request.args.get('debug') == '1' %}
+    <details>
+      <summary>Диагностика загрузки API</summary>
+      <p class="muted">
+        cache_hit={{ diagnostics.get('cache_hit') }},
+        successful_calls={{ diagnostics.get('successful_calls') }},
+        raw_events_total={{ diagnostics.get('raw_events_total') }},
+        filtered_events_total={{ diagnostics.get('filtered_events_total') }}
+      </p>
+      <ul>
+        {% for call in diagnostics.get('calls', []) %}
+          <li class="muted">
+            {% if call.get('ok') %}OK{% else %}ERR{% endif %} · {{ call.get('events_count') }} · {{ call.get('url') }}
+            {% if call.get('error') %} · {{ call.get('error') }}{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </details>
+  {% endif %}
 </section>
 
 <div class="live-grid">

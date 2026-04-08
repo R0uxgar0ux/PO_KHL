@@ -713,24 +713,25 @@ def game_teams_by_index(series: PlayoffSeries, game_index: int) -> tuple[str, st
     return series.team_b, series.team_a
 
 
-def _sportsdb_get(path: str, params: dict[str, str]) -> tuple[list[dict], bool]:
+def _sportsdb_get(path: str, params: dict[str, str]) -> tuple[list[dict], bool, dict]:
     query = urlencode(params)
     url = f"{THE_SPORTS_DB_BASE_URL}/{path}?{query}"
     try:
         with urlopen(url, timeout=15) as response:
             payload = json.loads(response.read().decode("utf-8"))
-        return payload.get("events") or [], True
-    except (URLError, TimeoutError, json.JSONDecodeError):
-        return [], False
+        events = payload.get("events") or []
+        return events, True, {"url": url, "ok": True, "events_count": len(events), "error": ""}
+    except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return [], False, {"url": url, "ok": False, "events_count": 0, "error": str(exc)}
 
 
 def _sportsdb_events_day(date_value: str) -> tuple[list[dict], int]:
-    events_by_league, ok_league = _sportsdb_get("eventsday.php", {"d": date_value, "l": "Russian KHL"})
+    events_by_league, ok_league, _ = _sportsdb_get("eventsday.php", {"d": date_value, "l": "Russian KHL"})
     calls_ok = int(ok_league)
     if events_by_league:
         return events_by_league, calls_ok
 
-    events_by_sport, ok_sport = _sportsdb_get("eventsday.php", {"d": date_value, "s": "Hockey"})
+    events_by_sport, ok_sport, _ = _sportsdb_get("eventsday.php", {"d": date_value, "s": "Hockey"})
     calls_ok += int(ok_sport)
     return events_by_sport, calls_ok
 
@@ -819,7 +820,7 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
     cached_payload = _live_cache.get("payload")
     if isinstance(cached_at, datetime) and isinstance(cached_payload, dict):
         if (now_utc - cached_at).total_seconds() <= LIVE_CACHE_TTL_SECONDS:
-            return cached_payload  # type: ignore[return-value]
+            return {**cached_payload, "diagnostics": {"cache_hit": True}}  # type: ignore[arg-type]
 
     upcoming: list[dict] = []
     live: list[dict] = []
@@ -827,21 +828,30 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
     window = timedelta(days=LIVE_WINDOW_DAYS)
 
     successful_calls = 0
+    diagnostics_calls: list[dict] = []
 
     all_by_day: list[dict] = []
     start_date = (now_utc - window).date()
     end_date = (now_utc + window).date()
     current = start_date
     while current <= end_date:
-        day_events, ok_count = _sportsdb_events_day(current.isoformat())
-        successful_calls += ok_count
+        day_events_league, ok_league, trace_league = _sportsdb_get("eventsday.php", {"d": current.isoformat(), "l": "Russian KHL"})
+        diagnostics_calls.append(trace_league)
+        successful_calls += int(ok_league)
+        day_events = day_events_league
+        if not day_events_league:
+            day_events_sport, ok_sport, trace_sport = _sportsdb_get("eventsday.php", {"d": current.isoformat(), "s": "Hockey"})
+            diagnostics_calls.append(trace_sport)
+            successful_calls += int(ok_sport)
+            day_events = day_events_sport
         all_by_day.extend(day_events)
         current += timedelta(days=1)
 
     # Fallback для случаев, когда daily endpoint отдал пусто.
     if not all_by_day:
-        next_events, ok_next = _sportsdb_get("eventsnextleague.php", {"id": KHL_LEAGUE_ID})
-        past_events, ok_past = _sportsdb_get("eventspastleague.php", {"id": KHL_LEAGUE_ID})
+        next_events, ok_next, trace_next = _sportsdb_get("eventsnextleague.php", {"id": KHL_LEAGUE_ID})
+        past_events, ok_past, trace_past = _sportsdb_get("eventspastleague.php", {"id": KHL_LEAGUE_ID})
+        diagnostics_calls.extend([trace_next, trace_past])
         successful_calls += int(ok_next) + int(ok_past)
         all_by_day.extend(next_events)
         all_by_day.extend(past_events)
@@ -881,7 +891,14 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
             return cached_payload  # type: ignore[return-value]
         error_message = "Не удалось загрузить live-данные из TheSportsDB"
 
-    payload = {"upcoming": upcoming, "live": live, "recent": recent, "error": error_message}
+    diagnostics = {
+        "cache_hit": False,
+        "successful_calls": successful_calls,
+        "raw_events_total": len(all_by_day),
+        "filtered_events_total": len(all_events),
+        "calls": diagnostics_calls,
+    }
+    payload = {"upcoming": upcoming, "live": live, "recent": recent, "error": error_message, "diagnostics": diagnostics}
     _live_cache["timestamp"] = now_utc
     _live_cache["payload"] = payload
     return payload
@@ -1105,6 +1122,7 @@ def register_routes(app: Flask) -> None:
             upcoming_events=groups["upcoming"],
             live_events=groups["live"],
             past_events=groups["recent"],
+            diagnostics=groups.get("diagnostics", {}),
         )
 
     @app.get("/results")
