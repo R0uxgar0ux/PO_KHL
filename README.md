@@ -57,8 +57,8 @@ pytest
 - JSON API для интеграции бота: `GET /api/live` (требуется авторизация в веб-приложении).
 
 ## Логотипы команд
-- В репозитории уже лежат локальные логотипы в `static/team_logos/` (включая `default.svg`), поэтому Docker-сборка не зависит от внешних URL.
-- Если нужно обновить PNG/GIF логотипы из сети вручную, можно выполнить: `./scripts/fetch_team_logos.sh ./static/team_logos`.
+- При сборке Docker-образа логотипы автоматически скачиваются в `static/team_logos/` скриптом `scripts/fetch_team_logos.sh` (по заданным URL).
+- При локальном запуске без Docker можно вручную выполнить: `./scripts/fetch_team_logos.sh ./static/team_logos`.
 
 
 ## TypeScript модуль подсчета очков
