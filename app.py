@@ -693,12 +693,15 @@ def game_teams_by_index(series: PlayoffSeries, game_index: int) -> tuple[str, st
     return series.team_b, series.team_a
 
 
-def _sportsdb_get(path: str, params: dict[str, str]) -> list[dict]:
+def _sportsdb_get(path: str, params: dict[str, str]) -> tuple[list[dict], bool]:
     query = urlencode(params)
     url = f"{THE_SPORTS_DB_BASE_URL}/{path}?{query}"
-    with urlopen(url, timeout=15) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-    return payload.get("events") or []
+    try:
+        with urlopen(url, timeout=15) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        return payload.get("events") or [], True
+    except (URLError, TimeoutError, json.JSONDecodeError):
+        return [], False
 
 
 def _normalize_team_name_ru(name: str | None) -> str:
@@ -771,19 +774,28 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
     recent: list[dict] = []
     window = timedelta(days=LIVE_WINDOW_DAYS)
 
-    try:
-        live_events_raw = _sportsdb_get("livescore.php", {"s": "Hockey"})
+    successful_calls = 0
 
-        all_by_day: list[dict] = []
-        start_date = (now_utc - window).date()
-        end_date = (now_utc + window).date()
-        current = start_date
-        while current <= end_date:
-            day_events = _sportsdb_get("eventsday.php", {"d": current.isoformat(), "s": "Hockey"})
-            all_by_day.extend(day_events)
-            current += timedelta(days=1)
-    except (URLError, TimeoutError, json.JSONDecodeError):
-        return {"upcoming": [], "live": [], "recent": [], "error": "Не удалось загрузить live-данные из TheSportsDB"}
+    live_events_raw, ok_live = _sportsdb_get("livescore.php", {"s": "Hockey"})
+    successful_calls += int(ok_live)
+
+    all_by_day: list[dict] = []
+    start_date = (now_utc - window).date()
+    end_date = (now_utc + window).date()
+    current = start_date
+    while current <= end_date:
+        day_events, ok_day = _sportsdb_get("eventsday.php", {"d": current.isoformat(), "s": "Hockey"})
+        successful_calls += int(ok_day)
+        all_by_day.extend(day_events)
+        current += timedelta(days=1)
+
+    # Fallback на league endpoints, если day/livescore вернули мало данных или API ограничил доступ.
+    if not all_by_day:
+        next_events, ok_next = _sportsdb_get("eventsnextleague.php", {"id": KHL_LEAGUE_ID})
+        past_events, ok_past = _sportsdb_get("eventspastleague.php", {"id": KHL_LEAGUE_ID})
+        successful_calls += int(ok_next) + int(ok_past)
+        all_by_day.extend(next_events)
+        all_by_day.extend(past_events)
 
     seen_ids: set[str] = set()
     all_events: list[dict] = []
@@ -814,7 +826,11 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
     live.sort(key=lambda item: item["datetime_utc"] or datetime.max)
     recent.sort(key=lambda item: item["datetime_utc"] or datetime.min, reverse=True)
 
-    return {"upcoming": upcoming, "live": live, "recent": recent, "error": ""}
+    error_message = ""
+    if successful_calls == 0:
+        error_message = "Не удалось загрузить live-данные из TheSportsDB"
+
+    return {"upcoming": upcoming, "live": live, "recent": recent, "error": error_message}
 
 def register_routes(app: Flask) -> None:
     @app.context_processor
