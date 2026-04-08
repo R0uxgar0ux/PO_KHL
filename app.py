@@ -69,6 +69,23 @@ KHL_RU_TEAMS = {
     "severstal cherepovets": "Северсталь",
     "severstal": "Северсталь",
 }
+KHL_TEAM_MARKERS = (
+    "avangard",
+    "lokomotiv",
+    "metallurg",
+    "torpedo",
+    "dynamo",
+    "dinamo",
+    "salavat",
+    "ak bars",
+    "cska",
+    "ska",
+    "spartak",
+    "sibir",
+    "avtomobilist",
+    "neftekhimik",
+    "severstal",
+)
 
 TEAM_LOGO_FILES = {
     "Авангард": "avangard.png",
@@ -720,7 +737,13 @@ def _is_khl_event(event: dict) -> bool:
         return True
 
     league_name = (event.get("strLeague") or "").lower()
-    return "khl" in league_name or "kontinental hockey league" in league_name
+    if "khl" in league_name or "kontinental hockey league" in league_name:
+        return True
+
+    home_team = (event.get("strHomeTeam") or "").lower()
+    away_team = (event.get("strAwayTeam") or "").lower()
+    teams_text = f"{home_team} {away_team}"
+    return any(marker in teams_text for marker in KHL_TEAM_MARKERS)
 
 
 def _parse_event_datetime_utc(event: dict) -> datetime | None:
