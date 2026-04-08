@@ -823,13 +823,18 @@ def _normalize_live_event(event: dict, now_utc: datetime, force_live: bool = Fal
     }
 
 
-def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dict]]:
+def fetch_khl_live_groups(now_utc: datetime | None = None, force_refresh: bool = False) -> dict[str, list[dict]]:
     now_utc = now_utc or datetime.utcnow()
     cached_at = _live_cache.get("timestamp")
     cached_payload = _live_cache.get("payload")
-    if isinstance(cached_at, datetime) and isinstance(cached_payload, dict):
+    if not force_refresh and isinstance(cached_at, datetime) and isinstance(cached_payload, dict):
         if (now_utc - cached_at).total_seconds() <= LIVE_CACHE_TTL_SECONDS:
-            return {**cached_payload, "diagnostics": {"cache_hit": True}}  # type: ignore[arg-type]
+            payload = dict(cached_payload)
+            diagnostics = dict(payload.get("diagnostics", {}))
+            diagnostics["cache_hit"] = True
+            diagnostics["cache_age_sec"] = int((now_utc - cached_at).total_seconds())
+            payload["diagnostics"] = diagnostics
+            return payload  # type: ignore[return-value]
 
     upcoming: list[dict] = []
     live: list[dict] = []
@@ -915,6 +920,7 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
 
     diagnostics = {
         "cache_hit": False,
+        "cache_age_sec": 0,
         "successful_calls": successful_calls,
         "raw_events_total": len(all_by_day),
         "filtered_events_total": len(all_events),
@@ -1136,7 +1142,8 @@ def register_routes(app: Flask) -> None:
         user = current_user()
         if not user:
             return redirect(url_for("login"))
-        groups = fetch_khl_live_groups()
+        force_refresh = request.args.get("nocache") == "1"
+        groups = fetch_khl_live_groups(force_refresh=force_refresh)
         if groups["error"]:
             flash(groups["error"])
         return render_template(

@@ -697,7 +697,7 @@ def test_live_page_renders_grouped_events(monkeypatch):
     monkeypatch.setattr(
         app_module,
         "fetch_khl_live_groups",
-        lambda: {
+        lambda **kwargs: {
             "upcoming": [
                 {
                     "home_team": "Team A",

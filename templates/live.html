@@ -8,10 +8,12 @@
       <summary>Диагностика загрузки API</summary>
       <p class="muted">
         cache_hit={{ diagnostics.get('cache_hit') }},
+        cache_age_sec={{ diagnostics.get('cache_age_sec') }},
         successful_calls={{ diagnostics.get('successful_calls') }},
         raw_events_total={{ diagnostics.get('raw_events_total') }},
         filtered_events_total={{ diagnostics.get('filtered_events_total') }}
       </p>
+      <p class="muted">Для принудительного обновления без кэша: <a href="{{ url_for('live') }}?debug=1&nocache=1">/live?debug=1&nocache=1</a></p>
       <ul>
         {% for call in diagnostics.get('calls', []) %}
           <li class="muted">
