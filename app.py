@@ -31,10 +31,13 @@ CONFERENCE_LABELS = {"W": "Запад", "E": "Восток"}
 ROUND_SORT_PRIORITY = {"F": 0, "SF": 1, "QF": 2, "R1": 3}
 LOGIN_RE = re.compile(r"^[a-zA-Z0-9_]{3,24}$")
 DETAILED_ROUNDS = {"SF", "F"}
-THE_SPORTS_DB_API_KEY = os.getenv("THESPORTSDB_API_KEY", "123")
+_RAW_SPORTS_DB_KEY = os.getenv("THESPORTSDB_API_KEY", "3")
+THE_SPORTS_DB_API_KEY = "3" if _RAW_SPORTS_DB_KEY == "123" else _RAW_SPORTS_DB_KEY
 THE_SPORTS_DB_BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{THE_SPORTS_DB_API_KEY}"
 KHL_LEAGUE_ID = "4920"
-LIVE_WINDOW_DAYS = 7
+LIVE_WINDOW_DAYS = 3
+LIVE_CACHE_TTL_SECONDS = 120
+_live_cache: dict[str, object] = {"timestamp": None, "payload": None}
 KHL_RU_TEAMS = {
     "avangard omsk": "Авангард",
     "lokomotiv yaroslavl": "Локомотив",
@@ -769,6 +772,12 @@ def _normalize_live_event(event: dict, now_utc: datetime) -> dict:
 
 def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dict]]:
     now_utc = now_utc or datetime.utcnow()
+    cached_at = _live_cache.get("timestamp")
+    cached_payload = _live_cache.get("payload")
+    if isinstance(cached_at, datetime) and isinstance(cached_payload, dict):
+        if (now_utc - cached_at).total_seconds() <= LIVE_CACHE_TTL_SECONDS:
+            return cached_payload  # type: ignore[return-value]
+
     upcoming: list[dict] = []
     live: list[dict] = []
     recent: list[dict] = []
@@ -779,23 +788,13 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
     live_events_raw, ok_live = _sportsdb_get("livescore.php", {"s": "Hockey"})
     successful_calls += int(ok_live)
 
-    all_by_day: list[dict] = []
-    start_date = (now_utc - window).date()
-    end_date = (now_utc + window).date()
-    current = start_date
-    while current <= end_date:
-        day_events, ok_day = _sportsdb_get("eventsday.php", {"d": current.isoformat(), "s": "Hockey"})
-        successful_calls += int(ok_day)
-        all_by_day.extend(day_events)
-        current += timedelta(days=1)
+    next_events, ok_next = _sportsdb_get("eventsnextleague.php", {"id": KHL_LEAGUE_ID})
+    past_events, ok_past = _sportsdb_get("eventspastleague.php", {"id": KHL_LEAGUE_ID})
+    successful_calls += int(ok_next) + int(ok_past)
 
-    # Fallback на league endpoints, если day/livescore вернули мало данных или API ограничил доступ.
-    if not all_by_day:
-        next_events, ok_next = _sportsdb_get("eventsnextleague.php", {"id": KHL_LEAGUE_ID})
-        past_events, ok_past = _sportsdb_get("eventspastleague.php", {"id": KHL_LEAGUE_ID})
-        successful_calls += int(ok_next) + int(ok_past)
-        all_by_day.extend(next_events)
-        all_by_day.extend(past_events)
+    all_by_day: list[dict] = []
+    all_by_day.extend(next_events)
+    all_by_day.extend(past_events)
 
     seen_ids: set[str] = set()
     all_events: list[dict] = []
@@ -828,9 +827,14 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
 
     error_message = ""
     if successful_calls == 0:
+        if isinstance(cached_payload, dict):
+            return cached_payload  # type: ignore[return-value]
         error_message = "Не удалось загрузить live-данные из TheSportsDB"
 
-    return {"upcoming": upcoming, "live": live, "recent": recent, "error": error_message}
+    payload = {"upcoming": upcoming, "live": live, "recent": recent, "error": error_message}
+    _live_cache["timestamp"] = now_utc
+    _live_cache["payload"] = payload
+    return payload
 
 def register_routes(app: Flask) -> None:
     @app.context_processor

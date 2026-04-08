@@ -38,7 +38,7 @@
   </section>
 
   <section class="card live-column">
-    <h3>Предстоящие (7 дней)</h3>
+    <h3>Предстоящие (3 дня)</h3>
     {% if upcoming_events %}
       {% for event in upcoming_events %}
         <article class="live-match">
@@ -63,12 +63,12 @@
         </article>
       {% endfor %}
     {% else %}
-      <p class="muted">Нет матчей на ближайшую неделю.</p>
+      <p class="muted">Нет матчей на ближайшие 3 дня.</p>
     {% endif %}
   </section>
 
   <section class="card live-column">
-    <h3>Прошедшие (7 дней)</h3>
+    <h3>Прошедшие (3 дня)</h3>
     {% if past_events %}
       {% for event in past_events %}
         <article class="live-match">
@@ -94,7 +94,7 @@
         </article>
       {% endfor %}
     {% else %}
-      <p class="muted">Нет завершённых матчей за последнюю неделю.</p>
+      <p class="muted">Нет завершённых матчей за последние 3 дня.</p>
     {% endif %}
   </section>
 </div>

@@ -741,8 +741,8 @@ def test_live_page_renders_grouped_events(monkeypatch):
         assert response.status_code == 200
         assert "LIVE-центр КХЛ" in html
         assert "Текущие (LIVE)" in html
-        assert "Предстоящие (7 дней)" in html
-        assert "Прошедшие (7 дней)" in html
+        assert "Предстоящие (3 дня)" in html
+        assert "Прошедшие (3 дня)" in html
         assert "Team C" in html
         assert "Team A" in html
         assert "4" in html
