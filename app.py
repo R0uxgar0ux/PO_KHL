@@ -3,9 +3,13 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import json
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.error import URLError
+from urllib.parse import urlencode
+from urllib.request import urlopen
 
 from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
 from flask_sqlalchemy import SQLAlchemy
@@ -27,6 +31,10 @@ CONFERENCE_LABELS = {"W": "Запад", "E": "Восток"}
 ROUND_SORT_PRIORITY = {"F": 0, "SF": 1, "QF": 2, "R1": 3}
 LOGIN_RE = re.compile(r"^[a-zA-Z0-9_]{3,24}$")
 DETAILED_ROUNDS = {"SF", "F"}
+THE_SPORTS_DB_API_KEY = os.getenv("THESPORTSDB_API_KEY", "123")
+THE_SPORTS_DB_BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{THE_SPORTS_DB_API_KEY}"
+KHL_LEAGUE_ID = "4920"
+LIVE_WINDOW_DAYS = 7
 
 TEAM_LOGO_FILES = {
     "Авангард": "avangard.png",
@@ -653,6 +661,113 @@ def game_teams_by_index(series: PlayoffSeries, game_index: int) -> tuple[str, st
         return series.team_a, series.team_b
     return series.team_b, series.team_a
 
+
+def _sportsdb_get(path: str, params: dict[str, str]) -> list[dict]:
+    query = urlencode(params)
+    url = f"{THE_SPORTS_DB_BASE_URL}/{path}?{query}"
+    with urlopen(url, timeout=15) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    return payload.get("events") or []
+
+
+def _parse_event_datetime_utc(event: dict) -> datetime | None:
+    timestamp = event.get("strTimestamp")
+    if timestamp:
+        for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                return datetime.strptime(timestamp, pattern)
+            except ValueError:
+                continue
+
+    date_event = event.get("dateEvent")
+    time_event = event.get("strTime") or "00:00:00"
+    if not date_event:
+        return None
+    if len(time_event) == 5:
+        time_event = f"{time_event}:00"
+    try:
+        return datetime.strptime(f"{date_event} {time_event}", "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
+def _to_msk_label(dt_utc: datetime | None) -> tuple[str, str]:
+    if not dt_utc:
+        return "—", "—"
+    dt_msk = dt_utc + timedelta(hours=3)
+    return dt_msk.strftime("%d.%m"), dt_msk.strftime("%H:%M")
+
+
+def _normalize_live_event(event: dict, now_utc: datetime) -> dict:
+    dt_utc = _parse_event_datetime_utc(event)
+    date_label, time_label = _to_msk_label(dt_utc)
+    home_score = event.get("intHomeScore")
+    away_score = event.get("intAwayScore")
+    status_raw = (event.get("strStatus") or "").strip()
+    status_lower = status_raw.lower()
+    is_live = any(token in status_lower for token in ("live", "progress", "in play", "ongoing"))
+
+    if not is_live and dt_utc and home_score is not None and away_score is not None:
+        is_live = dt_utc <= now_utc <= (dt_utc + timedelta(hours=4))
+
+    is_finished = bool(home_score is not None and away_score is not None and not is_live)
+    return {
+        "id": event.get("idEvent"),
+        "home_team": event.get("strHomeTeam") or "—",
+        "away_team": event.get("strAwayTeam") or "—",
+        "home_score": home_score,
+        "away_score": away_score,
+        "status": status_raw or ("LIVE" if is_live else ""),
+        "datetime_utc": dt_utc,
+        "date_label": date_label,
+        "time_label": time_label,
+        "is_live": is_live,
+        "is_finished": is_finished,
+    }
+
+
+def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dict]]:
+    now_utc = now_utc or datetime.utcnow()
+    upcoming: list[dict] = []
+    live: list[dict] = []
+    recent: list[dict] = []
+    window = timedelta(days=LIVE_WINDOW_DAYS)
+
+    try:
+        next_events = _sportsdb_get("eventsnextleague.php", {"id": KHL_LEAGUE_ID})
+        past_events = _sportsdb_get("eventspastleague.php", {"id": KHL_LEAGUE_ID})
+    except (URLError, TimeoutError, json.JSONDecodeError):
+        return {"upcoming": [], "live": [], "recent": [], "error": "Не удалось загрузить live-данные из TheSportsDB"}
+
+    seen_ids: set[str] = set()
+    all_events: list[dict] = []
+    for raw_event in next_events + past_events:
+        event_id = str(raw_event.get("idEvent") or "")
+        if event_id and event_id in seen_ids:
+            continue
+        if event_id:
+            seen_ids.add(event_id)
+        all_events.append(_normalize_live_event(raw_event, now_utc))
+
+    for event in all_events:
+        dt = event["datetime_utc"]
+        if event["is_live"]:
+            live.append(event)
+            continue
+        if not dt:
+            continue
+        if now_utc <= dt <= now_utc + window:
+            upcoming.append(event)
+            continue
+        if now_utc - window <= dt < now_utc:
+            recent.append(event)
+
+    upcoming.sort(key=lambda item: item["datetime_utc"] or datetime.max)
+    live.sort(key=lambda item: item["datetime_utc"] or datetime.max)
+    recent.sort(key=lambda item: item["datetime_utc"] or datetime.min, reverse=True)
+
+    return {"upcoming": upcoming, "live": live, "recent": recent, "error": ""}
+
 def register_routes(app: Flask) -> None:
     @app.context_processor
     def inject_user():
@@ -857,6 +972,21 @@ def register_routes(app: Flask) -> None:
             conference_labels=CONFERENCE_LABELS,
             round_labels=ROUND_LABELS,
             now=datetime.now(),
+        )
+
+    @app.get("/live")
+    def live():
+        user = current_user()
+        if not user:
+            return redirect(url_for("login"))
+        groups = fetch_khl_live_groups()
+        if groups["error"]:
+            flash(groups["error"])
+        return render_template(
+            "live.html",
+            upcoming_events=groups["upcoming"],
+            live_events=groups["live"],
+            past_events=groups["recent"],
         )
 
     @app.get("/results")
