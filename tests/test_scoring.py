@@ -662,3 +662,77 @@ def test_predictions_page_hides_empty_round_and_conference_blocks():
             html = response.get_data(as_text=True)
             assert response.status_code == 200
             assert "Пока нет серий на этой стадии в конференции" not in html
+
+
+def test_live_page_requires_auth():
+    app = make_app()
+    with app.test_client() as client:
+        response = client.get("/live", follow_redirects=False)
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith("/login")
+
+
+def test_live_page_renders_grouped_events(monkeypatch):
+    app = make_app()
+    with app.app_context():
+        user = User(username="liveuser", password_hash="x", display_name="liveuser")
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
+    import app as app_module
+
+    monkeypatch.setattr(
+        app_module,
+        "fetch_khl_live_groups",
+        lambda: {
+            "upcoming": [
+                {
+                    "home_team": "Team A",
+                    "away_team": "Team B",
+                    "home_score": None,
+                    "away_score": None,
+                    "date_label": "10.04",
+                    "time_label": "19:30",
+                    "status": "",
+                }
+            ],
+            "live": [
+                {
+                    "home_team": "Team C",
+                    "away_team": "Team D",
+                    "home_score": 2,
+                    "away_score": 1,
+                    "date_label": "08.04",
+                    "time_label": "20:00",
+                    "status": "LIVE",
+                }
+            ],
+            "recent": [
+                {
+                    "home_team": "Team E",
+                    "away_team": "Team F",
+                    "home_score": 4,
+                    "away_score": 3,
+                    "date_label": "07.04",
+                    "time_label": "18:00",
+                    "status": "Match Finished",
+                }
+            ],
+            "error": "",
+        },
+    )
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess["user_id"] = user_id
+        response = client.get("/live")
+        html = response.get_data(as_text=True)
+        assert response.status_code == 200
+        assert "LIVE-центр КХЛ" in html
+        assert "Текущие (LIVE)" in html
+        assert "Предстоящие (7 дней)" in html
+        assert "Прошедшие (7 дней)" in html
+        assert "Team C" in html
+        assert "Team A" in html
+        assert "4" in html
