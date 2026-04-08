@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Личный кабинет</h2>
+<p>Здесь ваш профиль, статистика и место в рейтинге. Прогнозы — на отдельной странице «Текущие прогнозы».</p>
+
+<div class="grid two">
+  <section class="card">
+    <h3>Профиль</h3>
+    <form method="post" class="prediction-form">
+      <label>Отображаемое имя
+        <input type="text" name="display_name" value="{{ current_user.display_name }}" required />
+      </label>
+      <button type="submit">Сохранить профиль</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h3>Статистика</h3>
+    <ul>
+      <li><strong>Логин:</strong> {{ current_user.username }}</li>
+      <li><strong>Роль:</strong> {% if current_user.is_admin %}Администратор{% else %}Участник{% endif %}</li>
+      <li><strong>Очки:</strong> {{ points }}</li>
+      <li><strong>Место в таблице:</strong> {{ rank }} из {{ total_users }}</li>
+      <li><strong>Прогнозов сделано:</strong> {{ predictions_count }}</li>
+      <li><strong>Точных счетов серий:</strong> {{ exact_hits }}</li>
+    </ul>
+  </section>
+</div>
+{% endblock %}

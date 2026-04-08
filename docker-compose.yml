@@ -1,0 +1,18 @@
+services:
+  khl-predictor:
+    build:
+      context: .
+      network: host
+      args:
+        - PIP_INDEX_URL=https://pypi.org/simple
+    container_name: khl-predictor
+    ports:
+      - "5000:5000"
+    environment:
+      - DB_PATH=/app/data/khl_playoff.db
+    volumes:
+      - ./data:/app/data
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    restart: unless-stopped
