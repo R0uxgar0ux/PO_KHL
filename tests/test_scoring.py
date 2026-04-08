@@ -1,6 +1,16 @@
 from datetime import datetime
 
-from app import PlayoffSeries, SeriesPrediction, User, create_app, db, leaderboard, score_series_prediction, validate_outcomes_sequence
+from app import (
+    PlayoffSeries,
+    SeriesPrediction,
+    User,
+    create_app,
+    db,
+    leaderboard,
+    score_series_prediction,
+    validate_outcomes_sequence,
+    _normalize_team_name_ru,
+)
 
 
 def make_app():
@@ -736,3 +746,9 @@ def test_live_page_renders_grouped_events(monkeypatch):
         assert "Team C" in html
         assert "Team A" in html
         assert "4" in html
+
+
+def test_live_team_name_translation_to_russian():
+    assert _normalize_team_name_ru("Avangard Omsk") == "Авангард"
+    assert _normalize_team_name_ru("CSKA Moscow") == "ЦСКА"
+    assert _normalize_team_name_ru("Unknown Team Name") == "Unknown Team Name"

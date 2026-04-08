@@ -17,11 +17,17 @@
             <span class="live-badge">{{ event.status or 'LIVE' }}</span>
           </div>
           <div class="live-score-row">
-            <span class="team-name">{{ event.home_team }}</span>
+            <span class="team-name team-name-with-logo">
+              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.home_team) }}" alt="{{ event.home_team }}" />
+              <span>{{ event.home_team }}</span>
+            </span>
             <strong>{{ event.home_score if event.home_score is not none else '—' }}</strong>
           </div>
           <div class="live-score-row">
-            <span class="team-name">{{ event.away_team }}</span>
+            <span class="team-name team-name-with-logo">
+              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.away_team) }}" alt="{{ event.away_team }}" />
+              <span>{{ event.away_team }}</span>
+            </span>
             <strong>{{ event.away_score if event.away_score is not none else '—' }}</strong>
           </div>
         </article>
@@ -41,11 +47,17 @@
             <span>{{ event.time_label }}</span>
           </div>
           <div class="live-score-row">
-            <span class="team-name">{{ event.home_team }}</span>
+            <span class="team-name team-name-with-logo">
+              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.home_team) }}" alt="{{ event.home_team }}" />
+              <span>{{ event.home_team }}</span>
+            </span>
             <strong>—</strong>
           </div>
           <div class="live-score-row">
-            <span class="team-name">{{ event.away_team }}</span>
+            <span class="team-name team-name-with-logo">
+              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.away_team) }}" alt="{{ event.away_team }}" />
+              <span>{{ event.away_team }}</span>
+            </span>
             <strong>—</strong>
           </div>
         </article>
@@ -66,11 +78,17 @@
             {% if event.status %}<span class="muted">{{ event.status }}</span>{% endif %}
           </div>
           <div class="live-score-row">
-            <span class="team-name">{{ event.home_team }}</span>
+            <span class="team-name team-name-with-logo">
+              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.home_team) }}" alt="{{ event.home_team }}" />
+              <span>{{ event.home_team }}</span>
+            </span>
             <strong>{{ event.home_score if event.home_score is not none else '—' }}</strong>
           </div>
           <div class="live-score-row">
-            <span class="team-name">{{ event.away_team }}</span>
+            <span class="team-name team-name-with-logo">
+              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.away_team) }}" alt="{{ event.away_team }}" />
+              <span>{{ event.away_team }}</span>
+            </span>
             <strong>{{ event.away_score if event.away_score is not none else '—' }}</strong>
           </div>
         </article>

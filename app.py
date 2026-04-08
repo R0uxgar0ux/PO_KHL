@@ -35,6 +35,37 @@ THE_SPORTS_DB_API_KEY = os.getenv("THESPORTSDB_API_KEY", "123")
 THE_SPORTS_DB_BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{THE_SPORTS_DB_API_KEY}"
 KHL_LEAGUE_ID = "4920"
 LIVE_WINDOW_DAYS = 7
+KHL_RU_TEAMS = {
+    "avangard omsk": "Авангард",
+    "lokomotiv yaroslavl": "Локомотив",
+    "lokomotiv": "Локомотив",
+    "metallurg magnitogorsk": "Металлург",
+    "metallurg": "Металлург",
+    "torpedo nizhny novgorod": "Торпедо",
+    "torpedo": "Торпедо",
+    "dynamo moscow": "Динамо Москва",
+    "dinamo moscow": "Динамо Москва",
+    "dynamo moscow": "Динамо Москва",
+    "dynamo minsk": "Динамо Минск",
+    "dinamo minsk": "Динамо Минск",
+    "salavat yulaev ufa": "Салават Юлаев",
+    "salavat yulaev": "Салават Юлаев",
+    "ak bars kazan": "Ак Барс",
+    "ak bars": "Ак Барс",
+    "cska moscow": "ЦСКА",
+    "ska saint petersburg": "СКА",
+    "ska": "СКА",
+    "spartak moscow": "Спартак",
+    "spartak": "Спартак",
+    "sibir novosibirsk": "Сибирь",
+    "sibir": "Сибирь",
+    "avtomobilist yekaterinburg": "Автомобилист",
+    "avtomobilist": "Автомобилист",
+    "neftekhimik nizhnekamsk": "Нефтехимик",
+    "neftekhimik": "Нефтехимик",
+    "severstal cherepovets": "Северсталь",
+    "severstal": "Северсталь",
+}
 
 TEAM_LOGO_FILES = {
     "Авангард": "avangard.png",
@@ -670,6 +701,13 @@ def _sportsdb_get(path: str, params: dict[str, str]) -> list[dict]:
     return payload.get("events") or []
 
 
+def _normalize_team_name_ru(name: str | None) -> str:
+    if not name:
+        return "—"
+    normalized = " ".join(re.sub(r"[^a-z0-9 ]+", " ", name.lower()).split())
+    return KHL_RU_TEAMS.get(normalized, name)
+
+
 def _parse_event_datetime_utc(event: dict) -> datetime | None:
     timestamp = event.get("strTimestamp")
     if timestamp:
@@ -713,8 +751,8 @@ def _normalize_live_event(event: dict, now_utc: datetime) -> dict:
     is_finished = bool(home_score is not None and away_score is not None and not is_live)
     return {
         "id": event.get("idEvent"),
-        "home_team": event.get("strHomeTeam") or "—",
-        "away_team": event.get("strAwayTeam") or "—",
+        "home_team": _normalize_team_name_ru(event.get("strHomeTeam")),
+        "away_team": _normalize_team_name_ru(event.get("strAwayTeam")),
         "home_score": home_score,
         "away_score": away_score,
         "status": status_raw or ("LIVE" if is_live else ""),
@@ -734,14 +772,24 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
     window = timedelta(days=LIVE_WINDOW_DAYS)
 
     try:
-        next_events = _sportsdb_get("eventsnextleague.php", {"id": KHL_LEAGUE_ID})
-        past_events = _sportsdb_get("eventspastleague.php", {"id": KHL_LEAGUE_ID})
+        live_events_raw = _sportsdb_get("livescore.php", {"s": "Hockey"})
+
+        all_by_day: list[dict] = []
+        start_date = (now_utc - window).date()
+        end_date = (now_utc + window).date()
+        current = start_date
+        while current <= end_date:
+            day_events = _sportsdb_get("eventsday.php", {"d": current.isoformat(), "s": "Hockey"})
+            all_by_day.extend(day_events)
+            current += timedelta(days=1)
     except (URLError, TimeoutError, json.JSONDecodeError):
         return {"upcoming": [], "live": [], "recent": [], "error": "Не удалось загрузить live-данные из TheSportsDB"}
 
     seen_ids: set[str] = set()
     all_events: list[dict] = []
-    for raw_event in next_events + past_events:
+    for raw_event in live_events_raw + all_by_day:
+        if str(raw_event.get("idLeague") or "") != KHL_LEAGUE_ID:
+            continue
         event_id = str(raw_event.get("idEvent") or "")
         if event_id and event_id in seen_ids:
             continue
