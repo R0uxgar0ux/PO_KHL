@@ -3,9 +3,13 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import json
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.error import URLError
+from urllib.parse import urlencode
+from urllib.request import urlopen
 
 from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
 from flask_sqlalchemy import SQLAlchemy
@@ -27,6 +31,61 @@ CONFERENCE_LABELS = {"W": "Запад", "E": "Восток"}
 ROUND_SORT_PRIORITY = {"F": 0, "SF": 1, "QF": 2, "R1": 3}
 LOGIN_RE = re.compile(r"^[a-zA-Z0-9_]{3,24}$")
 DETAILED_ROUNDS = {"SF", "F"}
+_RAW_SPORTS_DB_KEY = os.getenv("THESPORTSDB_API_KEY", "3")
+THE_SPORTS_DB_API_KEY = "3" if _RAW_SPORTS_DB_KEY == "123" else _RAW_SPORTS_DB_KEY
+THE_SPORTS_DB_BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{THE_SPORTS_DB_API_KEY}"
+KHL_LEAGUE_ID = "4920"
+LIVE_WINDOW_DAYS = 3
+LIVE_CACHE_TTL_SECONDS = 120
+_live_cache: dict[str, object] = {"timestamp": None, "payload": None}
+KHL_RU_TEAMS = {
+    "avangard omsk": "Авангард",
+    "lokomotiv yaroslavl": "Локомотив",
+    "lokomotiv": "Локомотив",
+    "metallurg magnitogorsk": "Металлург",
+    "metallurg": "Металлург",
+    "torpedo nizhny novgorod": "Торпедо",
+    "torpedo": "Торпедо",
+    "dynamo moscow": "Динамо Москва",
+    "dinamo moscow": "Динамо Москва",
+    "dynamo moscow": "Динамо Москва",
+    "dynamo minsk": "Динамо Минск",
+    "dinamo minsk": "Динамо Минск",
+    "salavat yulaev ufa": "Салават Юлаев",
+    "salavat yulaev": "Салават Юлаев",
+    "ak bars kazan": "Ак Барс",
+    "ak bars": "Ак Барс",
+    "cska moscow": "ЦСКА",
+    "ska saint petersburg": "СКА",
+    "ska": "СКА",
+    "spartak moscow": "Спартак",
+    "spartak": "Спартак",
+    "sibir novosibirsk": "Сибирь",
+    "sibir": "Сибирь",
+    "avtomobilist yekaterinburg": "Автомобилист",
+    "avtomobilist": "Автомобилист",
+    "neftekhimik nizhnekamsk": "Нефтехимик",
+    "neftekhimik": "Нефтехимик",
+    "severstal cherepovets": "Северсталь",
+    "severstal": "Северсталь",
+}
+KHL_TEAM_MARKERS = (
+    "avangard",
+    "lokomotiv",
+    "metallurg",
+    "torpedo",
+    "dynamo",
+    "dinamo",
+    "salavat",
+    "ak bars",
+    "cska",
+    "ska",
+    "spartak",
+    "sibir",
+    "avtomobilist",
+    "neftekhimik",
+    "severstal",
+)
 
 TEAM_LOGO_FILES = {
     "Авангард": "avangard.png",
@@ -653,6 +712,197 @@ def game_teams_by_index(series: PlayoffSeries, game_index: int) -> tuple[str, st
         return series.team_a, series.team_b
     return series.team_b, series.team_a
 
+
+def _sportsdb_get(path: str, params: dict[str, str]) -> tuple[list[dict], bool, dict]:
+    query = urlencode(params)
+    url = f"{THE_SPORTS_DB_BASE_URL}/{path}?{query}"
+    try:
+        with urlopen(url, timeout=15) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        events = payload.get("events") or []
+        return events, True, {"url": url, "ok": True, "events_count": len(events), "error": ""}
+    except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return [], False, {"url": url, "ok": False, "events_count": 0, "error": str(exc)}
+
+
+def _sportsdb_events_day(date_value: str) -> tuple[list[dict], int]:
+    events_by_league, ok_league, _ = _sportsdb_get("eventsday.php", {"d": date_value, "l": "Russian KHL"})
+    calls_ok = int(ok_league)
+    if events_by_league:
+        return events_by_league, calls_ok
+
+    events_by_sport, ok_sport, _ = _sportsdb_get("eventsday.php", {"d": date_value, "s": "Hockey"})
+    calls_ok += int(ok_sport)
+    return events_by_sport, calls_ok
+
+
+def _normalize_team_name_ru(name: str | None) -> str:
+    if not name:
+        return "—"
+    normalized = " ".join(re.sub(r"[^a-z0-9 ]+", " ", name.lower()).split())
+    return KHL_RU_TEAMS.get(normalized, name)
+
+
+def _is_khl_event(event: dict) -> bool:
+    league_id = str(event.get("idLeague") or "").strip()
+    if league_id == KHL_LEAGUE_ID:
+        return True
+
+    league_name = (event.get("strLeague") or "").lower()
+    if "khl" in league_name or "kontinental hockey league" in league_name:
+        return True
+
+    home_team = (event.get("strHomeTeam") or "").lower()
+    away_team = (event.get("strAwayTeam") or "").lower()
+    teams_text = f"{home_team} {away_team}"
+    return any(marker in teams_text for marker in KHL_TEAM_MARKERS)
+
+
+def _parse_event_datetime_utc(event: dict) -> datetime | None:
+    timestamp = event.get("strTimestamp")
+    if timestamp:
+        for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                return datetime.strptime(timestamp, pattern)
+            except ValueError:
+                continue
+
+    date_event = event.get("dateEvent")
+    time_event = event.get("strTime") or "00:00:00"
+    if not date_event:
+        return None
+    if len(time_event) == 5:
+        time_event = f"{time_event}:00"
+    try:
+        return datetime.strptime(f"{date_event} {time_event}", "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
+def _to_msk_label(dt_utc: datetime | None) -> tuple[str, str]:
+    if not dt_utc:
+        return "—", "—"
+    dt_msk = dt_utc + timedelta(hours=3)
+    return dt_msk.strftime("%d.%m"), dt_msk.strftime("%H:%M")
+
+
+def _normalize_live_event(event: dict, now_utc: datetime, force_live: bool = False) -> dict:
+    dt_utc = _parse_event_datetime_utc(event)
+    date_label, time_label = _to_msk_label(dt_utc)
+    home_score = event.get("intHomeScore")
+    away_score = event.get("intAwayScore")
+    status_raw = (event.get("strStatus") or "").strip()
+    status_lower = status_raw.lower()
+    is_live = force_live or any(token in status_lower for token in ("live", "progress", "in play", "ongoing"))
+
+    if not is_live and dt_utc and home_score is not None and away_score is not None:
+        is_live = dt_utc <= now_utc <= (dt_utc + timedelta(hours=4))
+
+    is_finished = bool(home_score is not None and away_score is not None and not is_live)
+    return {
+        "id": event.get("idEvent"),
+        "home_team": _normalize_team_name_ru(event.get("strHomeTeam")),
+        "away_team": _normalize_team_name_ru(event.get("strAwayTeam")),
+        "home_score": home_score,
+        "away_score": away_score,
+        "status": status_raw or ("LIVE" if is_live else ""),
+        "datetime_utc": dt_utc,
+        "date_label": date_label,
+        "time_label": time_label,
+        "is_live": is_live,
+        "is_finished": is_finished,
+    }
+
+
+def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dict]]:
+    now_utc = now_utc or datetime.utcnow()
+    cached_at = _live_cache.get("timestamp")
+    cached_payload = _live_cache.get("payload")
+    if isinstance(cached_at, datetime) and isinstance(cached_payload, dict):
+        if (now_utc - cached_at).total_seconds() <= LIVE_CACHE_TTL_SECONDS:
+            return {**cached_payload, "diagnostics": {"cache_hit": True}}  # type: ignore[arg-type]
+
+    upcoming: list[dict] = []
+    live: list[dict] = []
+    recent: list[dict] = []
+    window = timedelta(days=LIVE_WINDOW_DAYS)
+
+    successful_calls = 0
+    diagnostics_calls: list[dict] = []
+
+    all_by_day: list[dict] = []
+    start_date = (now_utc - window).date()
+    end_date = (now_utc + window).date()
+    current = start_date
+    while current <= end_date:
+        day_events_league, ok_league, trace_league = _sportsdb_get("eventsday.php", {"d": current.isoformat(), "l": "Russian KHL"})
+        diagnostics_calls.append(trace_league)
+        successful_calls += int(ok_league)
+        day_events = day_events_league
+        if not day_events_league:
+            day_events_sport, ok_sport, trace_sport = _sportsdb_get("eventsday.php", {"d": current.isoformat(), "s": "Hockey"})
+            diagnostics_calls.append(trace_sport)
+            successful_calls += int(ok_sport)
+            day_events = day_events_sport
+        all_by_day.extend(day_events)
+        current += timedelta(days=1)
+
+    # Fallback для случаев, когда daily endpoint отдал пусто.
+    if not all_by_day:
+        next_events, ok_next, trace_next = _sportsdb_get("eventsnextleague.php", {"id": KHL_LEAGUE_ID})
+        past_events, ok_past, trace_past = _sportsdb_get("eventspastleague.php", {"id": KHL_LEAGUE_ID})
+        diagnostics_calls.extend([trace_next, trace_past])
+        successful_calls += int(ok_next) + int(ok_past)
+        all_by_day.extend(next_events)
+        all_by_day.extend(past_events)
+
+    seen_ids: set[str] = set()
+    all_events: list[dict] = []
+    for raw_event in all_by_day:
+        if not _is_khl_event(raw_event):
+            continue
+        event_id = str(raw_event.get("idEvent") or "")
+        if event_id and event_id in seen_ids:
+            continue
+        if event_id:
+            seen_ids.add(event_id)
+        all_events.append(_normalize_live_event(raw_event, now_utc))
+
+    for event in all_events:
+        dt = event["datetime_utc"]
+        if event["is_live"]:
+            live.append(event)
+            continue
+        if not dt:
+            continue
+        if now_utc <= dt <= now_utc + window:
+            upcoming.append(event)
+            continue
+        if now_utc - window <= dt < now_utc:
+            recent.append(event)
+
+    upcoming.sort(key=lambda item: item["datetime_utc"] or datetime.max)
+    live.sort(key=lambda item: item["datetime_utc"] or datetime.max)
+    recent.sort(key=lambda item: item["datetime_utc"] or datetime.min, reverse=True)
+
+    error_message = ""
+    if successful_calls == 0:
+        if isinstance(cached_payload, dict):
+            return cached_payload  # type: ignore[return-value]
+        error_message = "Не удалось загрузить live-данные из TheSportsDB"
+
+    diagnostics = {
+        "cache_hit": False,
+        "successful_calls": successful_calls,
+        "raw_events_total": len(all_by_day),
+        "filtered_events_total": len(all_events),
+        "calls": diagnostics_calls,
+    }
+    payload = {"upcoming": upcoming, "live": live, "recent": recent, "error": error_message, "diagnostics": diagnostics}
+    _live_cache["timestamp"] = now_utc
+    _live_cache["payload"] = payload
+    return payload
+
 def register_routes(app: Flask) -> None:
     @app.context_processor
     def inject_user():
@@ -857,6 +1107,22 @@ def register_routes(app: Flask) -> None:
             conference_labels=CONFERENCE_LABELS,
             round_labels=ROUND_LABELS,
             now=datetime.now(),
+        )
+
+    @app.get("/live")
+    def live():
+        user = current_user()
+        if not user:
+            return redirect(url_for("login"))
+        groups = fetch_khl_live_groups()
+        if groups["error"]:
+            flash(groups["error"])
+        return render_template(
+            "live.html",
+            upcoming_events=groups["upcoming"],
+            live_events=groups["live"],
+            past_events=groups["recent"],
+            diagnostics=groups.get("diagnostics", {}),
         )
 
     @app.get("/results")
