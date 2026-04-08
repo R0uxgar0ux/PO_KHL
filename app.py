@@ -714,6 +714,15 @@ def _normalize_team_name_ru(name: str | None) -> str:
     return KHL_RU_TEAMS.get(normalized, name)
 
 
+def _is_khl_event(event: dict) -> bool:
+    league_id = str(event.get("idLeague") or "").strip()
+    if league_id == KHL_LEAGUE_ID:
+        return True
+
+    league_name = (event.get("strLeague") or "").lower()
+    return "khl" in league_name or "kontinental hockey league" in league_name
+
+
 def _parse_event_datetime_utc(event: dict) -> datetime | None:
     timestamp = event.get("strTimestamp")
     if timestamp:
@@ -742,14 +751,14 @@ def _to_msk_label(dt_utc: datetime | None) -> tuple[str, str]:
     return dt_msk.strftime("%d.%m"), dt_msk.strftime("%H:%M")
 
 
-def _normalize_live_event(event: dict, now_utc: datetime) -> dict:
+def _normalize_live_event(event: dict, now_utc: datetime, force_live: bool = False) -> dict:
     dt_utc = _parse_event_datetime_utc(event)
     date_label, time_label = _to_msk_label(dt_utc)
     home_score = event.get("intHomeScore")
     away_score = event.get("intAwayScore")
     status_raw = (event.get("strStatus") or "").strip()
     status_lower = status_raw.lower()
-    is_live = any(token in status_lower for token in ("live", "progress", "in play", "ongoing"))
+    is_live = force_live or any(token in status_lower for token in ("live", "progress", "in play", "ongoing"))
 
     if not is_live and dt_utc and home_score is not None and away_score is not None:
         is_live = dt_utc <= now_utc <= (dt_utc + timedelta(hours=4))
@@ -798,8 +807,18 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
 
     seen_ids: set[str] = set()
     all_events: list[dict] = []
-    for raw_event in live_events_raw + all_by_day:
-        if str(raw_event.get("idLeague") or "") != KHL_LEAGUE_ID:
+    for raw_event in live_events_raw:
+        if not _is_khl_event(raw_event):
+            continue
+        event_id = str(raw_event.get("idEvent") or "")
+        if event_id and event_id in seen_ids:
+            continue
+        if event_id:
+            seen_ids.add(event_id)
+        all_events.append(_normalize_live_event(raw_event, now_utc, force_live=True))
+
+    for raw_event in all_by_day:
+        if not _is_khl_event(raw_event):
             continue
         event_id = str(raw_event.get("idEvent") or "")
         if event_id and event_id in seen_ids:

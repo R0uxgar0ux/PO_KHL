@@ -10,6 +10,8 @@ from app import (
     score_series_prediction,
     validate_outcomes_sequence,
     _normalize_team_name_ru,
+    _is_khl_event,
+    _normalize_live_event,
 )
 
 
@@ -752,3 +754,16 @@ def test_live_team_name_translation_to_russian():
     assert _normalize_team_name_ru("Avangard Omsk") == "Авангард"
     assert _normalize_team_name_ru("CSKA Moscow") == "ЦСКА"
     assert _normalize_team_name_ru("Unknown Team Name") == "Unknown Team Name"
+
+
+def test_live_event_detection_by_league_name_and_forced_live():
+    assert _is_khl_event({"idLeague": "4920"}) is True
+    assert _is_khl_event({"strLeague": "Russian KHL"}) is True
+    assert _is_khl_event({"strLeague": "NHL"}) is False
+
+    event = _normalize_live_event(
+        {"strHomeTeam": "Avangard Omsk", "strAwayTeam": "CSKA Moscow", "strStatus": "", "dateEvent": "2026-04-08", "strTime": "12:00:00"},
+        datetime(2026, 4, 8, 12, 30),
+        force_live=True,
+    )
+    assert event["is_live"] is True
