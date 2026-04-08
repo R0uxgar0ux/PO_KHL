@@ -3,11 +3,15 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import threading
+import time
+import json
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.request import Request, urlopen
 
-from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -48,6 +52,10 @@ TEAM_LOGO_FILES = {
     "СКА": "ska.png",
     "Локомотив": "lokomotiv.gif",
 }
+
+_LIVE_STATE_LOCK = threading.Lock()
+_LIVE_SCORE_CACHE: dict[str, tuple[int, int]] = {}
+_LIVE_LAST_FETCH_AT: datetime | None = None
 
 
 
@@ -120,6 +128,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         seed_matches()
 
     register_routes(app)
+    if not app.config.get("TESTING"):
+        maybe_start_results_sync_worker(app)
     return app
 
 
@@ -163,6 +173,7 @@ class Match(db.Model):
     series_id = db.Column(db.Integer, db.ForeignKey("playoff_series.id"))
     home_score = db.Column(db.Integer)
     away_score = db.Column(db.Integer)
+    finished_at = db.Column(db.DateTime)
 
     series = db.relationship("PlayoffSeries", backref=db.backref("matches", lazy=True))
 
@@ -231,6 +242,8 @@ def ensure_schema_compatibility() -> None:
         db.session.execute(text("ALTER TABLE match ADD COLUMN conference VARCHAR(1) DEFAULT 'W'"))
     if "series_id" not in match_columns:
         db.session.execute(text("ALTER TABLE match ADD COLUMN series_id INTEGER"))
+    if "finished_at" not in match_columns:
+        db.session.execute(text("ALTER TABLE match ADD COLUMN finished_at DATETIME"))
     if "prediction_deadline" not in series_columns:
         db.session.execute(text("ALTER TABLE playoff_series ADD COLUMN prediction_deadline DATETIME"))
     if "locked_game_indices" not in series_columns:
@@ -300,6 +313,248 @@ def sort_series_list(series_list: list[PlayoffSeries], conference_first: bool = 
         series_list,
         key=lambda s: (ROUND_SORT_PRIORITY.get(s.round_code, 99), conf_order.get(s.conference, 99), s.id),
     )
+
+
+def parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        return None
+
+
+def load_results_feed(feed_url: str, timeout_seconds: int = 10) -> dict:
+    req = Request(feed_url, headers={"User-Agent": "khl-predictor-sync/1.0"})
+    with urlopen(req, timeout=timeout_seconds) as resp:
+        raw = resp.read().decode("utf-8")
+    payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise ValueError("Некорректный формат фида: ожидается JSON-объект")
+    return payload
+
+
+def build_live_block_from_feed(feed_url: str, timeout_seconds: int = 10) -> dict:
+    payload = load_results_feed(feed_url, timeout_seconds=timeout_seconds)
+    raw_series = payload.get("series", [])
+    now = datetime.now()
+    week_ago = now - timedelta(days=7)
+
+    live_matches: list[dict] = []
+    recent_matches: list[dict] = []
+    for item in raw_series:
+        round_label = ROUND_LABELS.get(str(item.get("round_code", "")), str(item.get("round_code", "")))
+        for match in item.get("matches", []):
+            kickoff = parse_iso_datetime(match.get("kickoff"))
+            finished_at = parse_iso_datetime(match.get("finished_at"))
+            try:
+                home_score = int(match.get("home_score", 0))
+                away_score = int(match.get("away_score", 0))
+            except (TypeError, ValueError):
+                home_score = 0
+                away_score = 0
+
+            row = {
+                "home_team": str(match.get("home_team", "")).strip(),
+                "away_team": str(match.get("away_team", "")).strip(),
+                "home_score": home_score,
+                "away_score": away_score,
+                "kickoff": kickoff,
+                "finished_at": finished_at,
+                "round_label": round_label,
+            }
+            if not row["home_team"] or not row["away_team"]:
+                continue
+
+            if kickoff and kickoff <= now and (finished_at is None or finished_at > now):
+                live_matches.append(row)
+            if finished_at and week_ago <= finished_at <= now:
+                recent_matches.append(row)
+
+    live_matches.sort(key=lambda m: (m["kickoff"] or now, m["home_team"]))
+    recent_matches.sort(key=lambda m: (m["finished_at"] or now), reverse=True)
+    return {"live_matches": live_matches, "recent_matches": recent_matches[:40], "fetched_at": now}
+
+
+def live_match_cache_key(match_row: dict) -> str:
+    kickoff = match_row.get("kickoff")
+    kickoff_key = kickoff.isoformat() if isinstance(kickoff, datetime) else "na"
+    return f"{match_row.get('home_team', '')}|{match_row.get('away_team', '')}|{kickoff_key}"
+
+
+def detect_live_goal_events(live_matches: list[dict]) -> tuple[list[dict], list[dict], datetime]:
+    now = datetime.now()
+    changed_matches: list[dict] = []
+    goal_events: list[dict] = []
+    with _LIVE_STATE_LOCK:
+        global _LIVE_LAST_FETCH_AT
+        for row in live_matches:
+            key = live_match_cache_key(row)
+            current_score = (int(row.get("home_score", 0)), int(row.get("away_score", 0)))
+            previous_score = _LIVE_SCORE_CACHE.get(key)
+            if previous_score != current_score:
+                changed_matches.append(
+                    {
+                        "match_key": key,
+                        "home_team": row.get("home_team", ""),
+                        "away_team": row.get("away_team", ""),
+                        "previous_score": previous_score,
+                        "current_score": current_score,
+                        "changed_at": now.isoformat(),
+                    }
+                )
+                if previous_score is not None:
+                    if current_score[0] > previous_score[0]:
+                        goal_events.append(
+                            {
+                                "team": row.get("home_team", ""),
+                                "opponent": row.get("away_team", ""),
+                                "score": f"{current_score[0]}:{current_score[1]}",
+                                "changed_at": now.isoformat(),
+                            }
+                        )
+                    if current_score[1] > previous_score[1]:
+                        goal_events.append(
+                            {
+                                "team": row.get("away_team", ""),
+                                "opponent": row.get("home_team", ""),
+                                "score": f"{current_score[0]}:{current_score[1]}",
+                                "changed_at": now.isoformat(),
+                            }
+                        )
+            _LIVE_SCORE_CACHE[key] = current_score
+        _LIVE_LAST_FETCH_AT = now
+    return changed_matches, goal_events, now
+
+
+def build_telegram_goal_messages(goal_events: list[dict]) -> list[str]:
+    messages: list[str] = []
+    for event in goal_events:
+        messages.append(
+            f"🚨 ГОЛ: {event.get('team', '')} vs {event.get('opponent', '')} · счёт {event.get('score', '')}"
+        )
+    return messages
+
+
+def serialize_live_rows(rows: list[dict]) -> list[dict]:
+    serialized: list[dict] = []
+    for row in rows:
+        item = dict(row)
+        kickoff = item.get("kickoff")
+        finished_at = item.get("finished_at")
+        if isinstance(kickoff, datetime):
+            item["kickoff"] = kickoff.isoformat()
+        if isinstance(finished_at, datetime):
+            item["finished_at"] = finished_at.isoformat()
+        serialized.append(item)
+    return serialized
+
+
+def sync_results_from_feed(feed_url: str, timeout_seconds: int = 10) -> tuple[int, int]:
+    payload = load_results_feed(feed_url, timeout_seconds=timeout_seconds)
+    raw_series = payload.get("series", []) if isinstance(payload, dict) else []
+    updated = 0
+    skipped = 0
+
+    for item in raw_series:
+        team_a = str(item.get("team_a", "")).strip()
+        team_b = str(item.get("team_b", "")).strip()
+        round_code = str(item.get("round_code", "")).strip()
+        conference = str(item.get("conference", "")).strip()
+        wins_a = int(item.get("wins_a", 0))
+        wins_b = int(item.get("wins_b", 0))
+        matches = item.get("matches", [])
+
+        query = PlayoffSeries.query.filter_by(team_a=team_a, team_b=team_b)
+        if round_code:
+            query = query.filter_by(round_code=round_code)
+        if conference:
+            query = query.filter_by(conference=conference)
+        series = query.first()
+        if not series:
+            skipped += 1
+            continue
+
+        if 4 not in (wins_a, wins_b):
+            skipped += 1
+            continue
+
+        matches_to_save: list[tuple[str, str, int, int, datetime | None, datetime | None]] = []
+        outcomes: list[str] = []
+        for idx, match_item in enumerate(matches, start=1):
+            home_team = str(match_item.get("home_team", "")).strip()
+            away_team = str(match_item.get("away_team", "")).strip()
+            try:
+                home_score = int(match_item.get("home_score", 0))
+                away_score = int(match_item.get("away_score", 0))
+            except (TypeError, ValueError):
+                continue
+            if not home_team or not away_team or home_score == away_score:
+                continue
+
+            kickoff = parse_iso_datetime(match_item.get("kickoff"))
+            finished_at = parse_iso_datetime(match_item.get("finished_at"))
+            if finished_at is None and kickoff is not None:
+                finished_at = kickoff + timedelta(hours=2, minutes=30)
+
+            if home_team == series.team_a:
+                a_goals, b_goals = home_score, away_score
+            else:
+                a_goals, b_goals = away_score, home_score
+            outcomes.append("A" if a_goals > b_goals else "B")
+            matches_to_save.append((home_team, away_team, home_score, away_score, kickoff, finished_at))
+
+        valid_sequence, _ = validate_outcomes_sequence(outcomes, wins_a, wins_b)
+        if not valid_sequence:
+            skipped += 1
+            continue
+
+        Match.query.filter_by(series_id=series.id).delete()
+        fallback_kickoff = datetime.now().replace(hour=19, minute=30, second=0, microsecond=0)
+        for home_team, away_team, home_score, away_score, kickoff, finished_at in matches_to_save:
+            match_kickoff = kickoff or fallback_kickoff
+            db.session.add(
+                Match(
+                    home_team=home_team,
+                    away_team=away_team,
+                    kickoff=match_kickoff,
+                    conference=series.conference,
+                    round_code=series.round_code,
+                    series_id=series.id,
+                    home_score=home_score,
+                    away_score=away_score,
+                    finished_at=finished_at,
+                )
+            )
+            fallback_kickoff = fallback_kickoff + timedelta(days=1)
+        updated += 1
+
+    db.session.commit()
+    return updated, skipped
+
+
+def maybe_start_results_sync_worker(app: Flask) -> None:
+    if os.getenv("RESULTS_SYNC_ENABLED", "0").strip() != "1":
+        return
+    feed_url = os.getenv("RESULTS_FEED_URL", "").strip()
+    if not feed_url:
+        return
+    interval = int(os.getenv("RESULTS_SYNC_INTERVAL_SECONDS", "300"))
+
+    def worker() -> None:
+        while True:
+            try:
+                with app.app_context():
+                    sync_results_from_feed(feed_url)
+            except Exception:
+                pass
+            time.sleep(max(60, interval))
+
+    thread = threading.Thread(target=worker, daemon=True, name="results-sync-worker")
+    thread.start()
 
 
 def is_valid_login(value: str) -> bool:
@@ -876,6 +1131,62 @@ def register_routes(app: Flask) -> None:
             round_labels=ROUND_LABELS,
             insights=build_results_insights(board),
         )
+
+    @app.get("/live")
+    def live_results():
+        user = current_user()
+        if not user:
+            return redirect(url_for("login"))
+
+        live_block = {
+            "enabled": False,
+            "error": "",
+            "live_matches": [],
+            "recent_matches": [],
+            "changed_matches": [],
+            "goal_events": [],
+            "fetched_at": None,
+            "refresh_seconds": 20,
+            "telegram_preview": [],
+        }
+        feed_url = os.getenv("RESULTS_FEED_URL", "").strip()
+        if feed_url:
+            live_block["enabled"] = True
+            try:
+                live_block.update(build_live_block_from_feed(feed_url))
+                changed_matches, goal_events, _ = detect_live_goal_events(live_block.get("live_matches", []))
+                live_block["changed_matches"] = changed_matches
+                live_block["goal_events"] = goal_events
+                live_block["telegram_preview"] = build_telegram_goal_messages(goal_events)
+            except Exception as exc:
+                live_block["error"] = str(exc)
+        return render_template("live.html", live_block=live_block)
+
+    @app.get("/api/live")
+    def api_live_results():
+        user = current_user()
+        if not user:
+            return jsonify({"ok": False, "error": "auth_required"}), 401
+
+        feed_url = os.getenv("RESULTS_FEED_URL", "").strip()
+        if not feed_url:
+            return jsonify({"ok": True, "enabled": False, "live_matches": [], "goal_events": []})
+        try:
+            live_block = build_live_block_from_feed(feed_url)
+            changed_matches, goal_events, fetched_at = detect_live_goal_events(live_block.get("live_matches", []))
+            response = {
+                "ok": True,
+                "enabled": True,
+                "fetched_at": fetched_at.isoformat(),
+                "live_matches": serialize_live_rows(live_block.get("live_matches", [])),
+                "recent_matches": serialize_live_rows(live_block.get("recent_matches", [])),
+                "changed_matches": changed_matches,
+                "goal_events": goal_events,
+                "telegram_preview": build_telegram_goal_messages(goal_events),
+            }
+            return jsonify(response)
+        except Exception as exc:
+            return jsonify({"ok": False, "enabled": True, "error": str(exc)}), 502
 
     @app.get("/bracket")
     def bracket():

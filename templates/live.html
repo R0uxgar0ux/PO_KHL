@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>LIVE результаты</h2>
+<p>Отдельная страница с текущими и недавними матчами + детектором изменений счёта (не влияет на проверку прогнозов ПО).</p>
+
+<section class="card">
+  {% if not live_block.enabled %}
+    <p class="muted">LIVE-фид отключен (не задан RESULTS_FEED_URL).</p>
+  {% elif live_block.error %}
+    <p class="danger-text">Ошибка загрузки LIVE: {{ live_block.error }}</p>
+  {% else %}
+    <p class="muted">
+      Последнее обновление:
+      {% if live_block.fetched_at %}{{ live_block.fetched_at.strftime('%d.%m.%Y %H:%M:%S') }} UTC{% else %}—{% endif %}.
+      Автообновление каждые {{ live_block.refresh_seconds }} сек.
+    </p>
+    {% if live_block.goal_events %}
+      <div class="card">
+        <h3>Новые голы (с прошлого обновления)</h3>
+        <ul>
+          {% for g in live_block.goal_events %}
+            <li>🚨 <strong>{{ g.team }}</strong> забил в матче против {{ g.opponent }} · счёт {{ g.score }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    {% if live_block.telegram_preview %}
+      <div class="card">
+        <h3>Черновик для Telegram-бота</h3>
+        <ul>
+          {% for line in live_block.telegram_preview %}
+            <li><code>{{ line }}</code></li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <div class="grid two">
+      <div>
+        <h3>Сейчас идут матчи</h3>
+        <ul>
+          {% for m in live_block.live_matches %}
+            <li>
+              {{ m.round_label }} · {{ m.home_team }} — {{ m.away_team }} ·
+              <strong>{{ m.home_score }}:{{ m.away_score }}</strong>
+              {% if m.kickoff %}<span class="muted"> (начало {{ m.kickoff.strftime('%d.%m %H:%M') }})</span>{% endif %}
+            </li>
+          {% else %}
+            <li>Сейчас нет активных матчей.</li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <div>
+        <h3>Последние результаты (7 дней)</h3>
+        <ul>
+          {% for m in live_block.recent_matches %}
+            <li>
+              {{ m.round_label }} · {{ m.home_team }} — {{ m.away_team }} ·
+              <strong>{{ m.home_score }}:{{ m.away_score }}</strong>
+              {% if m.finished_at %}<span class="muted"> (завершён {{ m.finished_at.strftime('%d.%m %H:%M') }})</span>{% endif %}
+            </li>
+          {% else %}
+            <li>За последние 7 дней завершённых матчей не найдено.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  {% endif %}
+</section>
+
+<script>
+  setTimeout(function () {
+    window.location.reload();
+  }, {{ live_block.refresh_seconds * 1000 }});
+</script>
+{% endblock %}

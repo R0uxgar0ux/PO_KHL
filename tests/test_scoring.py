@@ -1,4 +1,5 @@
 from datetime import datetime
+from unittest.mock import Mock, patch
 
 from app import PlayoffSeries, SeriesPrediction, User, create_app, db, leaderboard, score_series_prediction, validate_outcomes_sequence
 
@@ -662,3 +663,160 @@ def test_predictions_page_hides_empty_round_and_conference_blocks():
             html = response.get_data(as_text=True)
             assert response.status_code == 200
             assert "Пока нет серий на этой стадии в конференции" not in html
+
+
+def test_sync_results_from_feed_updates_series_matches():
+    app = make_app()
+    with app.app_context():
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="R1")
+        db.session.add(series)
+        db.session.commit()
+
+        payload = {
+            "series": [
+                {
+                    "team_a": "A",
+                    "team_b": "B",
+                    "conference": "W",
+                    "round_code": "R1",
+                    "wins_a": 4,
+                    "wins_b": 0,
+                    "matches": [
+                        {"home_team": "A", "away_team": "B", "home_score": 2, "away_score": 1, "kickoff": "2026-04-01T19:30:00"},
+                        {"home_team": "A", "away_team": "B", "home_score": 3, "away_score": 1, "kickoff": "2026-04-02T19:30:00"},
+                        {"home_team": "B", "away_team": "A", "home_score": 1, "away_score": 2, "kickoff": "2026-04-03T19:30:00"},
+                        {"home_team": "B", "away_team": "A", "home_score": 0, "away_score": 1, "kickoff": "2026-04-04T19:30:00"},
+                    ],
+                }
+            ]
+        }
+
+        fake_resp = Mock()
+        fake_resp.__enter__ = Mock(return_value=fake_resp)
+        fake_resp.__exit__ = Mock(return_value=False)
+        fake_resp.read.return_value = __import__("json").dumps(payload).encode("utf-8")
+
+        with patch("app.urlopen", return_value=fake_resp):
+            from app import Match, sync_results_from_feed
+            updated, skipped = sync_results_from_feed("https://example.com/feed.json")
+            assert updated == 1
+            assert skipped == 0
+            assert Match.query.filter_by(series_id=series.id).count() == 4
+
+
+def test_live_block_shows_feed_data_on_live_page():
+    app = make_app()
+    with app.app_context():
+        user = User(username="liveres", password_hash="x", display_name="liveres")
+        db.session.add(user)
+        db.session.commit()
+
+        payload = {
+            "series": [
+                {
+                    "team_a": "A",
+                    "team_b": "B",
+                    "round_code": "QF",
+                    "matches": [
+                        {
+                            "home_team": "A",
+                            "away_team": "B",
+                            "home_score": 2,
+                            "away_score": 1,
+                            "kickoff": "2026-04-08T18:00:00",
+                            "finished_at": "2026-04-08T20:30:00",
+                        }
+                    ],
+                }
+            ]
+        }
+
+        fake_resp = Mock()
+        fake_resp.__enter__ = Mock(return_value=fake_resp)
+        fake_resp.__exit__ = Mock(return_value=False)
+        fake_resp.read.return_value = __import__("json").dumps(payload).encode("utf-8")
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = user.id
+
+            with patch("app.os.getenv", return_value="https://example.com/live.json"), patch("app.urlopen", return_value=fake_resp):
+                response = client.get("/live")
+                html = response.get_data(as_text=True)
+                assert response.status_code == 200
+                assert "LIVE" in html
+                assert "Последние результаты (7 дней)" in html
+                assert "Автообновление каждые" in html
+
+
+def test_live_goal_detector_emits_goal_event_on_score_change():
+    app = make_app()
+    with app.app_context():
+        from app import detect_live_goal_events
+
+        base_match = {
+            "home_team": "A",
+            "away_team": "B",
+            "home_score": 1,
+            "away_score": 0,
+            "kickoff": datetime(2026, 4, 8, 18, 0),
+            "finished_at": None,
+            "round_label": "1/4 финала",
+        }
+        changed_match = dict(base_match)
+        changed_match["home_score"] = 2
+
+        _, first_events, _ = detect_live_goal_events([base_match])
+        _, second_events, _ = detect_live_goal_events([changed_match])
+
+        assert first_events == []
+        assert len(second_events) == 1
+        assert second_events[0]["team"] == "A"
+        assert second_events[0]["score"] == "2:0"
+
+
+def test_api_live_requires_auth_and_returns_live_payload():
+    app = make_app()
+    with app.app_context():
+        user = User(username="api_live", password_hash="x", display_name="api_live")
+        db.session.add(user)
+        db.session.commit()
+
+        payload = {
+            "series": [
+                {
+                    "team_a": "A",
+                    "team_b": "B",
+                    "round_code": "QF",
+                    "matches": [
+                        {
+                            "home_team": "A",
+                            "away_team": "B",
+                            "home_score": 1,
+                            "away_score": 0,
+                            "kickoff": "2020-04-08T18:00:00",
+                        }
+                    ],
+                }
+            ]
+        }
+
+        fake_resp = Mock()
+        fake_resp.__enter__ = Mock(return_value=fake_resp)
+        fake_resp.__exit__ = Mock(return_value=False)
+        fake_resp.read.return_value = __import__("json").dumps(payload).encode("utf-8")
+
+        with app.test_client() as client:
+            unauthorized = client.get("/api/live")
+            assert unauthorized.status_code == 401
+
+            with client.session_transaction() as sess:
+                sess["user_id"] = user.id
+
+            with patch("app.os.getenv", return_value="https://example.com/live.json"), patch("app.urlopen", return_value=fake_resp):
+                authorized = client.get("/api/live")
+                data = authorized.get_json()
+                assert authorized.status_code == 200
+                assert data["ok"] is True
+                assert data["enabled"] is True
+                assert len(data["live_matches"]) == 1
