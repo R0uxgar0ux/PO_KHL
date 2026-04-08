@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card live-header-card">
+  <h2>LIVE-центр КХЛ</h2>
+  <p class="muted">Данные: TheSportsDB (бесплатный API), время показано в МСК.</p>
+</section>
+
+<div class="live-grid">
+  <section class="card live-column">
+    <h3>Текущие (LIVE)</h3>
+    {% if live_events %}
+      {% for event in live_events %}
+        <article class="live-match live-now">
+          <div class="live-meta">
+            <span>{{ event.date_label }}</span>
+            <span>{{ event.time_label }}</span>
+            <span class="live-badge">{{ event.status or 'LIVE' }}</span>
+          </div>
+          <div class="live-score-row">
+            <span class="team-name team-name-with-logo">
+              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.home_team) }}" alt="{{ event.home_team }}" />
+              <span>{{ event.home_team }}</span>
+            </span>
+            <strong>{{ event.home_score if event.home_score is not none else '—' }}</strong>
+          </div>
+          <div class="live-score-row">
+            <span class="team-name team-name-with-logo">
+              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.away_team) }}" alt="{{ event.away_team }}" />
+              <span>{{ event.away_team }}</span>
+            </span>
+            <strong>{{ event.away_score if event.away_score is not none else '—' }}</strong>
+          </div>
+        </article>
+      {% endfor %}
+    {% else %}
+      <p class="muted">Сейчас нет матчей в LIVE.</p>
+    {% endif %}
+  </section>
+
+  <section class="card live-column">
+    <h3>Предстоящие (7 дней)</h3>
+    {% if upcoming_events %}
+      {% for event in upcoming_events %}
+        <article class="live-match">
+          <div class="live-meta">
+            <span>{{ event.date_label }}</span>
+            <span>{{ event.time_label }}</span>
+          </div>
+          <div class="live-score-row">
+            <span class="team-name team-name-with-logo">
+              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.home_team) }}" alt="{{ event.home_team }}" />
+              <span>{{ event.home_team }}</span>
+            </span>
+            <strong>—</strong>
+          </div>
+          <div class="live-score-row">
+            <span class="team-name team-name-with-logo">
+              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.away_team) }}" alt="{{ event.away_team }}" />
+              <span>{{ event.away_team }}</span>
+            </span>
+            <strong>—</strong>
+          </div>
+        </article>
+      {% endfor %}
+    {% else %}
+      <p class="muted">Нет матчей на ближайшую неделю.</p>
+    {% endif %}
+  </section>
+
+  <section class="card live-column">
+    <h3>Прошедшие (7 дней)</h3>
+    {% if past_events %}
+      {% for event in past_events %}
+        <article class="live-match">
+          <div class="live-meta">
+            <span>{{ event.date_label }}</span>
+            <span>{{ event.time_label }}</span>
+            {% if event.status %}<span class="muted">{{ event.status }}</span>{% endif %}
+          </div>
+          <div class="live-score-row">
+            <span class="team-name team-name-with-logo">
+              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.home_team) }}" alt="{{ event.home_team }}" />
+              <span>{{ event.home_team }}</span>
+            </span>
+            <strong>{{ event.home_score if event.home_score is not none else '—' }}</strong>
+          </div>
+          <div class="live-score-row">
+            <span class="team-name team-name-with-logo">
+              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.away_team) }}" alt="{{ event.away_team }}" />
+              <span>{{ event.away_team }}</span>
+            </span>
+            <strong>{{ event.away_score if event.away_score is not none else '—' }}</strong>
+          </div>
+        </article>
+      {% endfor %}
+    {% else %}
+      <p class="muted">Нет завершённых матчей за последнюю неделю.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
