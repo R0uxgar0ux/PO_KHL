@@ -724,6 +724,17 @@ def _sportsdb_get(path: str, params: dict[str, str]) -> tuple[list[dict], bool]:
         return [], False
 
 
+def _sportsdb_events_day(date_value: str) -> tuple[list[dict], int]:
+    events_by_league, ok_league = _sportsdb_get("eventsday.php", {"d": date_value, "l": "Russian KHL"})
+    calls_ok = int(ok_league)
+    if events_by_league:
+        return events_by_league, calls_ok
+
+    events_by_sport, ok_sport = _sportsdb_get("eventsday.php", {"d": date_value, "s": "Hockey"})
+    calls_ok += int(ok_sport)
+    return events_by_sport, calls_ok
+
+
 def _normalize_team_name_ru(name: str | None) -> str:
     if not name:
         return "—"
@@ -817,29 +828,26 @@ def fetch_khl_live_groups(now_utc: datetime | None = None) -> dict[str, list[dic
 
     successful_calls = 0
 
-    live_events_raw, ok_live = _sportsdb_get("livescore.php", {"s": "Hockey"})
-    successful_calls += int(ok_live)
-
-    next_events, ok_next = _sportsdb_get("eventsnextleague.php", {"id": KHL_LEAGUE_ID})
-    past_events, ok_past = _sportsdb_get("eventspastleague.php", {"id": KHL_LEAGUE_ID})
-    successful_calls += int(ok_next) + int(ok_past)
-
     all_by_day: list[dict] = []
-    all_by_day.extend(next_events)
-    all_by_day.extend(past_events)
+    start_date = (now_utc - window).date()
+    end_date = (now_utc + window).date()
+    current = start_date
+    while current <= end_date:
+        day_events, ok_count = _sportsdb_events_day(current.isoformat())
+        successful_calls += ok_count
+        all_by_day.extend(day_events)
+        current += timedelta(days=1)
+
+    # Fallback для случаев, когда daily endpoint отдал пусто.
+    if not all_by_day:
+        next_events, ok_next = _sportsdb_get("eventsnextleague.php", {"id": KHL_LEAGUE_ID})
+        past_events, ok_past = _sportsdb_get("eventspastleague.php", {"id": KHL_LEAGUE_ID})
+        successful_calls += int(ok_next) + int(ok_past)
+        all_by_day.extend(next_events)
+        all_by_day.extend(past_events)
 
     seen_ids: set[str] = set()
     all_events: list[dict] = []
-    for raw_event in live_events_raw:
-        if not _is_khl_event(raw_event):
-            continue
-        event_id = str(raw_event.get("idEvent") or "")
-        if event_id and event_id in seen_ids:
-            continue
-        if event_id:
-            seen_ids.add(event_id)
-        all_events.append(_normalize_live_event(raw_event, now_utc, force_live=True))
-
     for raw_event in all_by_day:
         if not _is_khl_event(raw_event):
             continue
