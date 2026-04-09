@@ -728,6 +728,7 @@ def test_live_page_renders_grouped_events(monkeypatch):
                     ],
                 },
                 {"date_label": "11.04", "events": []},
+                {"date_label": "12.04", "events": []},
             ],
             "live": [
                 {
@@ -779,11 +780,12 @@ def test_live_page_renders_grouped_events(monkeypatch):
         assert response.status_code == 200
         assert "LIVE-центр КХЛ" in html
         assert "Текущие (LIVE)" in html
-        assert "Предстоящие (3 дня)" in html
-        assert "Прошедшие (3 дня)" in html
+        assert "Предстоящие (сегодня + 3 дня)" in html
+        assert "Прошедшие (3 дня до сегодня)" in html
         assert "Team C" in html
         assert "Team A" in html
         assert "11.04" in html
+        assert "12.04" in html
         assert "4" in html
 
 

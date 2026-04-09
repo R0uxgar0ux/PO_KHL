@@ -1160,7 +1160,7 @@ def fetch_khl_live_groups(now_utc: datetime | None = None, force_refresh: bool =
     recent.sort(key=lambda item: item["datetime_utc"] or datetime.min, reverse=True)
 
     today_msk = (now_utc + timedelta(hours=3)).date()
-    upcoming_dates = [today_msk + timedelta(days=offset) for offset in range(1, LIVE_WINDOW_DAYS + 1)]
+    upcoming_dates = [today_msk + timedelta(days=offset) for offset in range(0, LIVE_WINDOW_DAYS + 1)]
     recent_dates = [today_msk - timedelta(days=offset) for offset in range(1, LIVE_WINDOW_DAYS + 1)]
     upcoming_day_buckets = _build_day_buckets(upcoming, upcoming_dates)
     recent_day_buckets = _build_day_buckets(recent, recent_dates)
