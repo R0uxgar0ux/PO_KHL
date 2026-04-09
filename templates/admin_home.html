@@ -6,6 +6,7 @@
   <a class="card admin-link" href="{{ url_for('admin_results') }}">Итоговые результаты матчей</a>
   <a class="card admin-link" href="{{ url_for('admin_users') }}">Пользователи и модерация</a>
   <a class="card admin-link" href="{{ url_for('admin_predictions') }}">Проверка прогнозов</a>
+  <a class="card admin-link" href="{{ url_for('admin_live_settings') }}">LIVE API настройки</a>
   <form method="post" action="{{ url_for('admin_backup') }}" class="card">
     <button type="submit">Скачать бэкап базы (.db)</button>
   </form>
