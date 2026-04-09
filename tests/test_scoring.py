@@ -788,6 +788,20 @@ def test_apihockey_khl_detection_and_normalization():
     assert event["home_team"] == "Авангард"
     assert event["away_team"] == "ЦСКА"
     assert event["is_live"] is True
+    assert _normalize_team_name_ru("Bars Kazan") == "Ак Барс"
+    assert _normalize_team_name_ru("Nizhny Novgorod") == "Торпедо"
+
+
+def test_apihockey_rejects_non_khl_even_with_matching_league_id_setting():
+    nhl_like_event = {
+        "id": 4001,
+        "date": "2026-04-09T10:00:00+00:00",
+        "league": {"id": 57, "name": "NHL", "sport": "Hockey"},
+        "teams": {"home": {"name": "San Jose Sharks"}, "away": {"name": "Edmonton Oilers"}},
+        "scores": {"home": 2, "away": 5},
+        "status": {"long": "Finished", "short": "FT"},
+    }
+    assert _is_khl_event_apihockey(nhl_like_event, "57") is False
 
 
 def test_fetch_live_groups_uses_apihockey_provider(monkeypatch):

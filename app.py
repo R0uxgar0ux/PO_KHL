@@ -47,10 +47,13 @@ KHL_RU_TEAMS = {
     "avangard omsk": "Авангард",
     "lokomotiv yaroslavl": "Локомотив",
     "lokomotiv": "Локомотив",
+    "yaroslavl": "Локомотив",
     "metallurg magnitogorsk": "Металлург",
     "metallurg": "Металлург",
+    "magnitogorsk": "Металлург",
     "torpedo nizhny novgorod": "Торпедо",
     "torpedo": "Торпедо",
+    "nizhny novgorod": "Торпедо",
     "dynamo moscow": "Динамо Москва",
     "dinamo moscow": "Динамо Москва",
     "dynamo moscow": "Динамо Москва",
@@ -60,6 +63,7 @@ KHL_RU_TEAMS = {
     "salavat yulaev": "Салават Юлаев",
     "ak bars kazan": "Ак Барс",
     "ak bars": "Ак Барс",
+    "bars kazan": "Ак Барс",
     "cska moscow": "ЦСКА",
     "ska saint petersburg": "СКА",
     "ska": "СКА",
@@ -90,6 +94,13 @@ KHL_TEAM_MARKERS = (
     "avtomobilist",
     "neftekhimik",
     "severstal",
+    "omsk",
+    "yaroslavl",
+    "magnitogorsk",
+    "nizhny novgorod",
+    "kazan",
+    "nizhnekamsk",
+    "cherepovets",
 )
 
 TEAM_LOGO_FILES = {
@@ -861,12 +872,19 @@ def _is_khl_event_apihockey(event: dict, khl_league_id: str) -> bool:
     if "hockey" not in sport:
         return False
 
-    league_id = str(league.get("id") or "").strip()
-    if league_id and league_id == khl_league_id:
+    league_name = (league.get("name") or "").lower()
+    has_khl_name = "khl" in league_name or "kontinental hockey league" in league_name
+    if has_khl_name:
         return True
 
-    league_name = (league.get("name") or "").lower()
-    return "khl" in league_name or "kontinental hockey league" in league_name
+    home_name = ((event.get("teams") or {}).get("home") or {}).get("name") or ""
+    away_name = ((event.get("teams") or {}).get("away") or {}).get("name") or ""
+    teams_text = f"{home_name} {away_name}".lower()
+    has_khl_team_marker = any(marker in teams_text for marker in KHL_TEAM_MARKERS)
+    if has_khl_team_marker:
+        return True
+
+    return False
 
 
 def _parse_event_datetime_utc(event: dict) -> datetime | None:
@@ -1009,7 +1027,7 @@ def fetch_khl_live_groups(now_utc: datetime | None = None, force_refresh: bool =
         while current <= end_date:
             day_events, ok_day, trace_day = _apihockey_get(
                 "games",
-                {"date": current.isoformat(), "league": api_hockey_khl_league_id},
+                {"date": current.isoformat(), "league": api_hockey_khl_league_id, "season": str(current.year)},
                 api_hockey_base_url,
                 api_hockey_key,
                 api_hockey_host,
