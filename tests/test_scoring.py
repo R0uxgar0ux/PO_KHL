@@ -804,6 +804,19 @@ def test_apihockey_rejects_non_khl_even_with_matching_league_id_setting():
     assert _is_khl_event_apihockey(nhl_like_event, "57") is False
 
 
+def test_apihockey_rejects_vhl_and_mhl():
+    vhl_event = {
+        "league": {"id": 57, "name": "VHL", "sport": "Hockey"},
+        "teams": {"home": {"name": "Metallurg Novokuznetsk"}, "away": {"name": "Gornyak"}},
+    }
+    mhl_event = {
+        "league": {"id": 57, "name": "MHL", "sport": "Hockey"},
+        "teams": {"home": {"name": "SKA-1946"}, "away": {"name": "Krasnaya Armiya"}},
+    }
+    assert _is_khl_event_apihockey(vhl_event, "57") is False
+    assert _is_khl_event_apihockey(mhl_event, "57") is False
+
+
 def test_fetch_live_groups_uses_apihockey_provider(monkeypatch):
     import app as app_module
 

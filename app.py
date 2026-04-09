@@ -873,18 +873,27 @@ def _is_khl_event_apihockey(event: dict, khl_league_id: str) -> bool:
         return False
 
     league_name = (league.get("name") or "").lower()
-    has_khl_name = "khl" in league_name or "kontinental hockey league" in league_name
-    if has_khl_name:
-        return True
+    if not league_name:
+        return False
 
-    home_name = ((event.get("teams") or {}).get("home") or {}).get("name") or ""
-    away_name = ((event.get("teams") or {}).get("away") or {}).get("name") or ""
-    teams_text = f"{home_name} {away_name}".lower()
-    has_khl_team_marker = any(marker in teams_text for marker in KHL_TEAM_MARKERS)
-    if has_khl_team_marker:
-        return True
+    excluded_markers = (
+        "mhl",
+        "vhl",
+        "jhl",
+        "u20",
+        "u18",
+        "junior",
+        "women",
+        "female",
+        "вхл",
+        "мхл",
+        "жхл",
+        "молод",
+    )
+    if any(marker in league_name for marker in excluded_markers):
+        return False
 
-    return False
+    return "khl" in league_name or "kontinental hockey league" in league_name or "континентальная хоккейная лига" in league_name
 
 
 def _parse_event_datetime_utc(event: dict) -> datetime | None:
