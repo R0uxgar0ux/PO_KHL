@@ -790,6 +790,7 @@ def test_apihockey_khl_detection_and_normalization():
     assert event["is_live"] is True
     assert _normalize_team_name_ru("Bars Kazan") == "Ак Барс"
     assert _normalize_team_name_ru("Nizhny Novgorod") == "Торпедо"
+    assert _normalize_team_name_ru("Salavat Ufa") == "Салават Юлаев"
 
 
 def test_apihockey_rejects_non_khl_even_with_matching_league_id_setting():

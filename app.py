@@ -61,6 +61,7 @@ KHL_RU_TEAMS = {
     "dinamo minsk": "Динамо Минск",
     "salavat yulaev ufa": "Салават Юлаев",
     "salavat yulaev": "Салават Юлаев",
+    "salavat ufa": "Салават Юлаев",
     "ak bars kazan": "Ак Барс",
     "ak bars": "Ак Барс",
     "bars kazan": "Ак Барс",
