@@ -2,6 +2,10 @@
 {% block content %}
 <h2>Панель внесения результатов</h2>
 <p>Форма повторяет прогнозы по сериям: итог серии и точные счета матчей. Ниже есть кнопки блокировки прогноза по каждому матчу.</p>
+<form method="post" class="inline-form">
+  <input type="hidden" name="action" value="sync_live" />
+  <button type="submit">Импортировать завершённые матчи из LIVE</button>
+</form>
 
 {% for conference_code in ['W', 'E'] %}
   <h3 class="conference-title">{{ conference_labels[conference_code] }}</h3>
