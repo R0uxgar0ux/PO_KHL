@@ -712,6 +712,23 @@ def test_live_page_renders_grouped_events(monkeypatch):
                     "status": "",
                 }
             ],
+            "upcoming_days": [
+                {
+                    "date_label": "10.04",
+                    "events": [
+                        {
+                            "home_team": "Team A",
+                            "away_team": "Team B",
+                            "home_score": None,
+                            "away_score": None,
+                            "date_label": "10.04",
+                            "time_label": "19:30",
+                            "status": "",
+                        }
+                    ],
+                },
+                {"date_label": "11.04", "events": []},
+            ],
             "live": [
                 {
                     "home_team": "Team C",
@@ -734,6 +751,22 @@ def test_live_page_renders_grouped_events(monkeypatch):
                     "status": "Match Finished",
                 }
             ],
+            "recent_days": [
+                {
+                    "date_label": "07.04",
+                    "events": [
+                        {
+                            "home_team": "Team E",
+                            "away_team": "Team F",
+                            "home_score": 4,
+                            "away_score": 3,
+                            "date_label": "07.04",
+                            "time_label": "18:00",
+                            "status": "Match Finished",
+                        }
+                    ],
+                }
+            ],
             "error": "",
         },
     )
@@ -750,6 +783,7 @@ def test_live_page_renders_grouped_events(monkeypatch):
         assert "Прошедшие (3 дня)" in html
         assert "Team C" in html
         assert "Team A" in html
+        assert "11.04" in html
         assert "4" in html
 
 

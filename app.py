@@ -5,7 +5,7 @@ import re
 import shutil
 import json
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import urlencode
@@ -935,6 +935,24 @@ def _to_msk_label(dt_utc: datetime | None) -> tuple[str, str]:
     return dt_msk.strftime("%d.%m"), dt_msk.strftime("%H:%M")
 
 
+def _build_day_buckets(events: list[dict], dates: list[date]) -> list[dict]:
+    by_day: dict[date, list[dict]] = {date_value: [] for date_value in dates}
+    for event in events:
+        dt_utc = event.get("datetime_utc")
+        if not isinstance(dt_utc, datetime):
+            continue
+        date_msk = (dt_utc + timedelta(hours=3)).date()
+        if date_msk in by_day:
+            by_day[date_msk].append(event)
+
+    buckets: list[dict] = []
+    for date_value in dates:
+        day_events = by_day.get(date_value, [])
+        day_events.sort(key=lambda item: item.get("datetime_utc") or datetime.max)
+        buckets.append({"date_label": date_value.strftime("%d.%m"), "events": day_events})
+    return buckets
+
+
 def _normalize_live_event(event: dict, now_utc: datetime, force_live: bool = False) -> dict:
     dt_utc = _parse_event_datetime_utc(event)
     date_label, time_label = _to_msk_label(dt_utc)
@@ -1141,6 +1159,12 @@ def fetch_khl_live_groups(now_utc: datetime | None = None, force_refresh: bool =
     live.sort(key=lambda item: item["datetime_utc"] or datetime.max)
     recent.sort(key=lambda item: item["datetime_utc"] or datetime.min, reverse=True)
 
+    today_msk = (now_utc + timedelta(hours=3)).date()
+    upcoming_dates = [today_msk + timedelta(days=offset) for offset in range(1, LIVE_WINDOW_DAYS + 1)]
+    recent_dates = [today_msk - timedelta(days=offset) for offset in range(1, LIVE_WINDOW_DAYS + 1)]
+    upcoming_day_buckets = _build_day_buckets(upcoming, upcoming_dates)
+    recent_day_buckets = _build_day_buckets(recent, recent_dates)
+
     error_message = ""
     source_label = _provider_label(provider)
     if successful_calls == 0:
@@ -1162,6 +1186,8 @@ def fetch_khl_live_groups(now_utc: datetime | None = None, force_refresh: bool =
         "upcoming": upcoming,
         "live": live,
         "recent": recent,
+        "upcoming_days": upcoming_day_buckets,
+        "recent_days": recent_day_buckets,
         "error": error_message,
         "diagnostics": diagnostics,
         "source_label": source_label,
@@ -1388,8 +1414,10 @@ def register_routes(app: Flask) -> None:
         return render_template(
             "live.html",
             upcoming_events=groups["upcoming"],
+            upcoming_days=groups.get("upcoming_days", []),
             live_events=groups["live"],
             past_events=groups["recent"],
+            past_days=groups.get("recent_days", []),
             diagnostics=groups.get("diagnostics", {}),
             source_label=groups.get("source_label", _provider_label(get_live_runtime_config()["live_provider"])),
         )

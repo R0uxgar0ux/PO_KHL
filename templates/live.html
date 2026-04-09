@@ -60,28 +60,36 @@
 
   <section class="card live-column">
     <h3>Предстоящие (3 дня)</h3>
-    {% if upcoming_events %}
-      {% for event in upcoming_events %}
-        <article class="live-match">
-          <div class="live-meta">
-            <span>{{ event.date_label }}</span>
-            <span>{{ event.time_label }}</span>
-          </div>
-          <div class="live-score-row">
-            <span class="team-name team-name-with-logo">
-              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.home_team) }}" alt="{{ event.home_team }}" />
-              <span>{{ event.home_team }}</span>
-            </span>
-            <strong>—</strong>
-          </div>
-          <div class="live-score-row">
-            <span class="team-name team-name-with-logo">
-              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.away_team) }}" alt="{{ event.away_team }}" />
-              <span>{{ event.away_team }}</span>
-            </span>
-            <strong>—</strong>
-          </div>
-        </article>
+    {% if upcoming_days %}
+      {% for day in upcoming_days %}
+        <section class="live-day-block">
+          <h4 class="live-day-title">{{ day.date_label }}</h4>
+          {% if day.events %}
+            {% for event in day.events %}
+              <article class="live-match">
+                <div class="live-meta">
+                  <span>{{ event.time_label }}</span>
+                </div>
+                <div class="live-score-row">
+                  <span class="team-name team-name-with-logo">
+                    <img class="team-logo live-team-logo" src="{{ team_logo_url(event.home_team) }}" alt="{{ event.home_team }}" />
+                    <span>{{ event.home_team }}</span>
+                  </span>
+                  <strong>—</strong>
+                </div>
+                <div class="live-score-row">
+                  <span class="team-name team-name-with-logo">
+                    <img class="team-logo live-team-logo" src="{{ team_logo_url(event.away_team) }}" alt="{{ event.away_team }}" />
+                    <span>{{ event.away_team }}</span>
+                  </span>
+                  <strong>—</strong>
+                </div>
+              </article>
+            {% endfor %}
+          {% else %}
+            <p class="muted">На {{ day.date_label }} матчей нет.</p>
+          {% endif %}
+        </section>
       {% endfor %}
     {% else %}
       <p class="muted">Нет матчей на ближайшие 3 дня.</p>
@@ -90,29 +98,37 @@
 
   <section class="card live-column">
     <h3>Прошедшие (3 дня)</h3>
-    {% if past_events %}
-      {% for event in past_events %}
-        <article class="live-match">
-          <div class="live-meta">
-            <span>{{ event.date_label }}</span>
-            <span>{{ event.time_label }}</span>
-            {% if event.status %}<span class="muted">{{ event.status }}</span>{% endif %}
-          </div>
-          <div class="live-score-row">
-            <span class="team-name team-name-with-logo">
-              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.home_team) }}" alt="{{ event.home_team }}" />
-              <span>{{ event.home_team }}</span>
-            </span>
-            <strong>{{ event.home_score if event.home_score is not none else '—' }}</strong>
-          </div>
-          <div class="live-score-row">
-            <span class="team-name team-name-with-logo">
-              <img class="team-logo live-team-logo" src="{{ team_logo_url(event.away_team) }}" alt="{{ event.away_team }}" />
-              <span>{{ event.away_team }}</span>
-            </span>
-            <strong>{{ event.away_score if event.away_score is not none else '—' }}</strong>
-          </div>
-        </article>
+    {% if past_days %}
+      {% for day in past_days %}
+        <section class="live-day-block">
+          <h4 class="live-day-title">{{ day.date_label }}</h4>
+          {% if day.events %}
+            {% for event in day.events %}
+              <article class="live-match">
+                <div class="live-meta">
+                  <span>{{ event.time_label }}</span>
+                  {% if event.status %}<span class="muted">{{ event.status }}</span>{% endif %}
+                </div>
+                <div class="live-score-row">
+                  <span class="team-name team-name-with-logo">
+                    <img class="team-logo live-team-logo" src="{{ team_logo_url(event.home_team) }}" alt="{{ event.home_team }}" />
+                    <span>{{ event.home_team }}</span>
+                  </span>
+                  <strong>{{ event.home_score if event.home_score is not none else '—' }}</strong>
+                </div>
+                <div class="live-score-row">
+                  <span class="team-name team-name-with-logo">
+                    <img class="team-logo live-team-logo" src="{{ team_logo_url(event.away_team) }}" alt="{{ event.away_team }}" />
+                    <span>{{ event.away_team }}</span>
+                  </span>
+                  <strong>{{ event.away_score if event.away_score is not none else '—' }}</strong>
+                </div>
+              </article>
+            {% endfor %}
+          {% else %}
+            <p class="muted">На {{ day.date_label }} завершённых матчей нет.</p>
+          {% endif %}
+        </section>
       {% endfor %}
     {% else %}
       <p class="muted">Нет завершённых матчей за последние 3 дня.</p>
