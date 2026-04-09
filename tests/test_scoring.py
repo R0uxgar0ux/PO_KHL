@@ -502,6 +502,55 @@ def test_admin_results_redirects_back_to_series_anchor():
             assert response.headers['Location'].endswith(f'/admin/results#series-{series.id}')
 
 
+def test_admin_results_can_sync_finished_live_matches(monkeypatch):
+    app = make_app()
+    with app.app_context():
+        admin = User(username="adminsync", password_hash="x", display_name="adminsync", is_admin=True)
+        series = PlayoffSeries(team_a="Локомотив", team_b="Салават Юлаев", conference="W", round_code="QF")
+        db.session.add_all([admin, series])
+        db.session.commit()
+
+        import app as app_module
+
+        monkeypatch.setattr(
+            app_module,
+            "fetch_khl_live_groups",
+            lambda **kwargs: {
+                "recent": [
+                    {
+                        "home_team": "Локомотив",
+                        "away_team": "Салават Юлаев",
+                        "home_score": 2,
+                        "away_score": 1,
+                        "is_finished": True,
+                        "is_live": False,
+                        "datetime_utc": datetime(2026, 4, 9, 12, 0),
+                    }
+                ],
+                "live": [],
+                "upcoming": [],
+                "error": "",
+                "diagnostics": {},
+                "source_label": "test",
+            },
+        )
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = admin.id
+            response = client.post("/admin/results", data={"action": "sync_live"}, follow_redirects=True)
+            assert response.status_code == 200
+            html = response.get_data(as_text=True)
+            assert "Импорт из LIVE выполнен" in html
+
+        from app import Match
+
+        match = Match.query.filter_by(series_id=series.id).first()
+        assert match is not None
+        assert match.home_score == 2
+        assert match.away_score == 1
+
+
 def test_admin_matches_shows_late_rounds_first():
     app = make_app()
     with app.app_context():
@@ -780,8 +829,8 @@ def test_live_page_renders_grouped_events(monkeypatch):
         assert response.status_code == 200
         assert "LIVE-центр КХЛ" in html
         assert "Текущие (LIVE)" in html
-        assert "Предстоящие (сегодня + 3 дня)" in html
-        assert "Прошедшие (3 дня до сегодня)" in html
+        assert "Предстоящие (сегодня + 1 день)" in html
+        assert "Прошедшие (1 день до сегодня)" in html
         assert "Team C" in html
         assert "Team A" in html
         assert "11.04" in html

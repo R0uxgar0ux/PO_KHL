@@ -40,7 +40,7 @@ API_HOCKEY_KEY = os.getenv("API_HOCKEY_KEY", "")
 API_HOCKEY_HOST = os.getenv("API_HOCKEY_HOST", "")
 API_HOCKEY_KHL_LEAGUE_ID = os.getenv("API_HOCKEY_KHL_LEAGUE_ID", "57")
 KHL_LEAGUE_ID = "4920"
-LIVE_WINDOW_DAYS = 3
+LIVE_WINDOW_DAYS = 1
 LIVE_CACHE_TTL_SECONDS = 120
 _live_cache: dict[str, object] = {"timestamp": None, "payload": None}
 KHL_RU_TEAMS = {
@@ -1008,6 +1008,76 @@ def _normalize_apihockey_event(event: dict, now_utc: datetime) -> dict:
     }
 
 
+def sync_live_results_to_series() -> dict[str, int]:
+    groups = fetch_khl_live_groups(force_refresh=True)
+    events = list(groups.get("recent", [])) + list(groups.get("live", []))
+    series_list = PlayoffSeries.query.all()
+    series_by_teams: dict[frozenset[str], list[PlayoffSeries]] = defaultdict(list)
+    for series in series_list:
+        series_by_teams[frozenset((series.team_a, series.team_b))].append(series)
+
+    created = 0
+    updated = 0
+    skipped = 0
+
+    for event in events:
+        if not event.get("is_finished"):
+            continue
+        home_team = event.get("home_team")
+        away_team = event.get("away_team")
+        home_score = event.get("home_score")
+        away_score = event.get("away_score")
+        if not isinstance(home_team, str) or not isinstance(away_team, str):
+            skipped += 1
+            continue
+        if not isinstance(home_score, int) or not isinstance(away_score, int):
+            skipped += 1
+            continue
+
+        candidates = series_by_teams.get(frozenset((home_team, away_team)), [])
+        if not candidates:
+            skipped += 1
+            continue
+        series = sorted(candidates, key=lambda item: ROUND_SORT_PRIORITY.get(item.round_code, 99))[0]
+
+        event_dt = event.get("datetime_utc")
+        if not isinstance(event_dt, datetime):
+            event_dt = datetime.utcnow()
+
+        matching_matches = sorted(
+            [m for m in series.matches if m.home_team == home_team and m.away_team == away_team],
+            key=lambda m: m.kickoff,
+        )
+        match = next((m for m in matching_matches if m.kickoff.date() == event_dt.date()), None)
+        if match is None:
+            match = next((m for m in matching_matches if not m.is_finished), None)
+
+        if match is None:
+            db.session.add(
+                Match(
+                    home_team=home_team,
+                    away_team=away_team,
+                    kickoff=event_dt,
+                    conference=series.conference,
+                    round_code=series.round_code,
+                    series_id=series.id,
+                    home_score=home_score,
+                    away_score=away_score,
+                )
+            )
+            created += 1
+            continue
+
+        if match.home_score == home_score and match.away_score == away_score:
+            continue
+        match.home_score = home_score
+        match.away_score = away_score
+        updated += 1
+
+    db.session.commit()
+    return {"created": created, "updated": updated, "skipped": skipped}
+
+
 def fetch_khl_live_groups(now_utc: datetime | None = None, force_refresh: bool = False) -> dict[str, list[dict]]:
     now_utc = now_utc or datetime.utcnow()
     live_config = get_live_runtime_config()
@@ -1420,6 +1490,7 @@ def register_routes(app: Flask) -> None:
             past_days=groups.get("recent_days", []),
             diagnostics=groups.get("diagnostics", {}),
             source_label=groups.get("source_label", _provider_label(get_live_runtime_config()["live_provider"])),
+            live_window_days=LIVE_WINDOW_DAYS,
         )
 
     @app.get("/results")
@@ -1525,6 +1596,14 @@ def register_routes(app: Flask) -> None:
 
         if request.method == "POST":
             action = request.form.get("action", "save_results")
+            if action == "sync_live":
+                stats = sync_live_results_to_series()
+                flash(
+                    "Импорт из LIVE выполнен: "
+                    f"создано {stats['created']}, обновлено {stats['updated']}, пропущено {stats['skipped']}"
+                )
+                return redirect(url_for("admin_results"))
+
             series_id = int(request.form["series_id"])
             series = PlayoffSeries.query.get_or_404(series_id)
             focus_url = f"{url_for('admin_results')}#series-{series.id}"
