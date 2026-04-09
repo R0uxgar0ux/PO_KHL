@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <h2>LIVE API настройки</h2>
+  <p class="muted">Здесь можно переключить провайдер и задать API-ключи без переменных окружения.</p>
+
+  <form method="post" class="form-grid">
+    <label>
+      Провайдер LIVE
+      <select name="live_provider">
+        <option value="thesportsdb" {% if settings.get('live_provider') == 'thesportsdb' %}selected{% endif %}>TheSportsDB (free)</option>
+        <option value="api_hockey" {% if settings.get('live_provider') == 'api_hockey' %}selected{% endif %}>API-Hockey</option>
+      </select>
+    </label>
+
+    <label>
+      TheSportsDB API key
+      <input type="text" name="sportsdb_api_key" value="{{ settings.get('sportsdb_api_key', '') }}" />
+    </label>
+
+    <label>
+      API-Hockey key
+      <input type="text" name="api_hockey_key" value="{{ settings.get('api_hockey_key', '') }}" />
+    </label>
+
+    <label>
+      API-Hockey base URL
+      <input type="text" name="api_hockey_base_url" value="{{ settings.get('api_hockey_base_url', '') }}" />
+    </label>
+
+    <label>
+      API-Hockey host (опционально)
+      <input type="text" name="api_hockey_host" value="{{ settings.get('api_hockey_host', '') }}" />
+    </label>
+
+    <label>
+      API-Hockey KHL league id
+      <input type="text" name="api_hockey_khl_league_id" value="{{ settings.get('api_hockey_khl_league_id', '') }}" />
+    </label>
+
+    <button type="submit">Сохранить настройки</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,6 +1,21 @@
 from datetime import datetime
 
-from app import PlayoffSeries, SeriesPrediction, User, create_app, db, leaderboard, score_series_prediction, validate_outcomes_sequence
+from app import (
+    PlayoffSeries,
+    SeriesPrediction,
+    User,
+    create_app,
+    db,
+    leaderboard,
+    score_series_prediction,
+    validate_outcomes_sequence,
+    _normalize_team_name_ru,
+    _is_khl_event,
+    _is_khl_event_apihockey,
+    _normalize_live_event,
+    _normalize_apihockey_event,
+    fetch_khl_live_groups,
+)
 
 
 def make_app():
@@ -662,3 +677,273 @@ def test_predictions_page_hides_empty_round_and_conference_blocks():
             html = response.get_data(as_text=True)
             assert response.status_code == 200
             assert "Пока нет серий на этой стадии в конференции" not in html
+
+
+def test_live_page_requires_auth():
+    app = make_app()
+    with app.test_client() as client:
+        response = client.get("/live", follow_redirects=False)
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith("/login")
+
+
+def test_live_page_renders_grouped_events(monkeypatch):
+    app = make_app()
+    with app.app_context():
+        user = User(username="liveuser", password_hash="x", display_name="liveuser")
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
+    import app as app_module
+
+    monkeypatch.setattr(
+        app_module,
+        "fetch_khl_live_groups",
+        lambda **kwargs: {
+            "upcoming": [
+                {
+                    "home_team": "Team A",
+                    "away_team": "Team B",
+                    "home_score": None,
+                    "away_score": None,
+                    "date_label": "10.04",
+                    "time_label": "19:30",
+                    "status": "",
+                }
+            ],
+            "live": [
+                {
+                    "home_team": "Team C",
+                    "away_team": "Team D",
+                    "home_score": 2,
+                    "away_score": 1,
+                    "date_label": "08.04",
+                    "time_label": "20:00",
+                    "status": "LIVE",
+                }
+            ],
+            "recent": [
+                {
+                    "home_team": "Team E",
+                    "away_team": "Team F",
+                    "home_score": 4,
+                    "away_score": 3,
+                    "date_label": "07.04",
+                    "time_label": "18:00",
+                    "status": "Match Finished",
+                }
+            ],
+            "error": "",
+        },
+    )
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess["user_id"] = user_id
+        response = client.get("/live")
+        html = response.get_data(as_text=True)
+        assert response.status_code == 200
+        assert "LIVE-центр КХЛ" in html
+        assert "Текущие (LIVE)" in html
+        assert "Предстоящие (3 дня)" in html
+        assert "Прошедшие (3 дня)" in html
+        assert "Team C" in html
+        assert "Team A" in html
+        assert "4" in html
+
+
+def test_live_team_name_translation_to_russian():
+    assert _normalize_team_name_ru("Avangard Omsk") == "Авангард"
+    assert _normalize_team_name_ru("CSKA Moscow") == "ЦСКА"
+    assert _normalize_team_name_ru("Unknown Team Name") == "Unknown Team Name"
+
+
+def test_live_event_detection_by_league_name_and_forced_live():
+    assert _is_khl_event({"idLeague": "4920", "strSport": "Ice Hockey"}) is True
+    assert _is_khl_event({"strLeague": "Russian KHL", "strSport": "Ice Hockey"}) is True
+    assert _is_khl_event({"strHomeTeam": "Avangard Omsk", "strAwayTeam": "CSKA Moscow", "strSport": "Ice Hockey"}) is True
+    assert _is_khl_event({"strLeague": "NHL", "strSport": "Ice Hockey"}) is False
+    assert _is_khl_event({"idLeague": "4920", "strSport": "Soccer"}) is False
+
+    event = _normalize_live_event(
+        {"strHomeTeam": "Avangard Omsk", "strAwayTeam": "CSKA Moscow", "strStatus": "", "dateEvent": "2026-04-08", "strTime": "12:00:00"},
+        datetime(2026, 4, 8, 12, 30),
+        force_live=True,
+    )
+    assert event["is_live"] is True
+
+
+def test_apihockey_khl_detection_and_normalization():
+    raw = {
+        "id": 1001,
+        "date": "2026-04-09T15:00:00+00:00",
+        "league": {"id": 57, "name": "KHL", "sport": "Hockey"},
+        "teams": {"home": {"name": "Avangard Omsk"}, "away": {"name": "CSKA Moscow"}},
+        "scores": {"home": 2, "away": 1},
+        "status": {"long": "In Play", "short": "2"},
+    }
+    assert _is_khl_event_apihockey(raw, "57") is True
+    event = _normalize_apihockey_event(raw, datetime(2026, 4, 9, 15, 30))
+    assert event["home_team"] == "Авангард"
+    assert event["away_team"] == "ЦСКА"
+    assert event["is_live"] is True
+    assert _normalize_team_name_ru("Bars Kazan") == "Ак Барс"
+    assert _normalize_team_name_ru("Nizhny Novgorod") == "Торпедо"
+
+
+def test_apihockey_rejects_non_khl_even_with_matching_league_id_setting():
+    nhl_like_event = {
+        "id": 4001,
+        "date": "2026-04-09T10:00:00+00:00",
+        "league": {"id": 57, "name": "NHL", "sport": "Hockey"},
+        "teams": {"home": {"name": "San Jose Sharks"}, "away": {"name": "Edmonton Oilers"}},
+        "scores": {"home": 2, "away": 5},
+        "status": {"long": "Finished", "short": "FT"},
+    }
+    assert _is_khl_event_apihockey(nhl_like_event, "57") is False
+
+
+def test_apihockey_rejects_vhl_and_mhl():
+    vhl_event = {
+        "league": {"id": 57, "name": "VHL", "sport": "Hockey"},
+        "teams": {"home": {"name": "Metallurg Novokuznetsk"}, "away": {"name": "Gornyak"}},
+    }
+    mhl_event = {
+        "league": {"id": 57, "name": "MHL", "sport": "Hockey"},
+        "teams": {"home": {"name": "SKA-1946"}, "away": {"name": "Krasnaya Armiya"}},
+    }
+    assert _is_khl_event_apihockey(vhl_event, "57") is False
+    assert _is_khl_event_apihockey(mhl_event, "57") is False
+
+
+def test_fetch_live_groups_uses_apihockey_provider(monkeypatch):
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "LIVE_DATA_PROVIDER", "api_hockey")
+    monkeypatch.setattr(app_module, "API_HOCKEY_KEY", "paid-key")
+    monkeypatch.setattr(
+        app_module,
+        "get_live_runtime_config",
+        lambda: {
+            "live_provider": "api_hockey",
+            "sportsdb_api_key": "3",
+            "api_hockey_base_url": "https://mock.api",
+            "api_hockey_key": "paid-key",
+            "api_hockey_host": "",
+            "api_hockey_khl_league_id": "57",
+        },
+    )
+
+    def fake_get(path: str, params: dict, base_url: str, api_key: str, api_host: str):
+        assert path == "games"
+        assert api_key == "paid-key"
+        return (
+            [
+                {
+                    "id": 2001,
+                    "date": "2026-04-09T12:00:00+00:00",
+                    "league": {"id": 57, "name": "KHL", "sport": "Hockey"},
+                    "teams": {"home": {"name": "Avangard Omsk"}, "away": {"name": "CSKA Moscow"}},
+                    "scores": {"home": 3, "away": 2},
+                    "status": {"long": "Match Finished", "short": "FT"},
+                }
+            ],
+            True,
+            {"url": "mock://games", "ok": True, "events_count": 1, "error": ""},
+        )
+
+    monkeypatch.setattr(app_module, "_apihockey_get", fake_get)
+    app_module._live_cache["timestamp"] = None
+    app_module._live_cache["payload"] = None
+
+    groups = fetch_khl_live_groups(now_utc=datetime(2026, 4, 9, 16, 0), force_refresh=True)
+    assert groups["diagnostics"]["provider"] == "api_hockey"
+    assert groups["source_label"] == "API-Hockey (paid)"
+    assert groups["recent"]
+
+
+def test_admin_live_settings_page_and_save():
+    app = make_app()
+    with app.app_context():
+        admin = User(username="adminlive", password_hash="x", display_name="adminlive", is_admin=True)
+        db.session.add(admin)
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = admin.id
+
+            page = client.get("/admin/live-settings")
+            assert page.status_code == 200
+            assert "LIVE API настройки" in page.get_data(as_text=True)
+
+            save = client.post(
+                "/admin/live-settings",
+                data={
+                    "live_provider": "api_hockey",
+                    "sportsdb_api_key": "3",
+                    "api_hockey_key": "abc123",
+                    "api_hockey_base_url": "https://v1.hockey.api-sports.io",
+                    "api_hockey_host": "api-hockey.p.rapidapi.com",
+                    "api_hockey_khl_league_id": "57",
+                },
+                follow_redirects=True,
+            )
+            html = save.get_data(as_text=True)
+            assert save.status_code == 200
+            assert "LIVE API настройки сохранены" in html
+
+        from app import get_live_runtime_config
+
+        config = get_live_runtime_config()
+        assert config["live_provider"] == "api_hockey"
+        assert config["api_hockey_key"] == "abc123"
+
+
+def test_fetch_live_groups_apihockey_fallback_without_league(monkeypatch):
+    import app as app_module
+
+    monkeypatch.setattr(
+        app_module,
+        "get_live_runtime_config",
+        lambda: {
+            "live_provider": "api_hockey",
+            "sportsdb_api_key": "3",
+            "api_hockey_base_url": "http://v1.hockey.api-sports.io",
+            "api_hockey_key": "paid-key",
+            "api_hockey_host": "",
+            "api_hockey_khl_league_id": "57",
+        },
+    )
+
+    calls = []
+
+    def fake_get(path: str, params: dict, base_url: str, api_key: str, api_host: str):
+        calls.append((params, base_url))
+        if "league" in params:
+            return [], True, {"url": "mock://league", "ok": True, "events_count": 0, "error": ""}
+        return (
+            [
+                {
+                    "id": 3001,
+                    "date": "2026-04-09T12:00:00+00:00",
+                    "league": {"id": 57, "name": "KHL", "sport": "Hockey"},
+                    "teams": {"home": {"name": "Avangard Omsk"}, "away": {"name": "CSKA Moscow"}},
+                    "scores": {"home": 1, "away": 0},
+                    "status": {"long": "Match Finished", "short": "FT"},
+                }
+            ],
+            True,
+            {"url": "mock://date", "ok": True, "events_count": 1, "error": ""},
+        )
+
+    monkeypatch.setattr(app_module, "_apihockey_get", fake_get)
+    app_module._live_cache["timestamp"] = None
+    app_module._live_cache["payload"] = None
+
+    groups = fetch_khl_live_groups(now_utc=datetime(2026, 4, 9, 18, 0), force_refresh=True)
+    assert groups["recent"]
+    assert any("league" in params for params, _base in calls)
+    assert any("league" not in params for params, _base in calls)
+    assert all(base_url.startswith("https://") for _params, base_url in calls)
