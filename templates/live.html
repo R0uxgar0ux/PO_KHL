@@ -2,7 +2,7 @@
 {% block content %}
 <section class="card live-header-card">
   <h2>LIVE-центр КХЛ</h2>
-  <p class="muted">Данные: TheSportsDB (бесплатный API), время показано в МСК.</p>
+  <p class="muted">Данные: {{ source_label }}, время показано в МСК.</p>
   {% if (current_user and current_user.is_admin) or request.args.get('debug') == '1' %}
     <details>
       <summary>Диагностика загрузки API</summary>
