@@ -315,6 +315,15 @@ def get_live_runtime_config() -> dict[str, str]:
     return config
 
 
+def _normalize_base_url(url: str, fallback: str) -> str:
+    value = (url or "").strip()
+    if not value:
+        return fallback
+    if value.startswith("http://"):
+        return "https://" + value[len("http://"):]
+    return value
+
+
 def ensure_schema_compatibility() -> None:
     inspector = db.inspect(db.engine)
     user_columns = {col["name"] for col in inspector.get_columns("user")}
@@ -788,6 +797,10 @@ def _apihockey_get(path: str, params: dict[str, str], base_url: str, api_key: st
         request = Request(url, headers=headers)  # noqa: S310
         with urlopen(request, timeout=15) as response:  # noqa: S310
             payload = json.loads(response.read().decode("utf-8"))
+        errors = payload.get("errors")
+        if isinstance(errors, dict) and errors:
+            error_text = "; ".join(f"{k}: {v}" for k, v in errors.items())
+            return [], False, {"url": url, "ok": False, "events_count": 0, "error": error_text}
         events = payload.get("response") or []
         return events, True, {"url": url, "ok": True, "events_count": len(events), "error": ""}
     except (URLError, TimeoutError, json.JSONDecodeError) as exc:
@@ -955,8 +968,14 @@ def fetch_khl_live_groups(now_utc: datetime | None = None, force_refresh: bool =
     provider = live_config["live_provider"]
     sportsdb_key_raw = live_config.get("sportsdb_api_key") or "3"
     sportsdb_api_key = "3" if sportsdb_key_raw == "123" else sportsdb_key_raw
-    sportsdb_base_url = f"https://www.thesportsdb.com/api/v1/json/{sportsdb_api_key}"
-    api_hockey_base_url = live_config.get("api_hockey_base_url") or API_HOCKEY_BASE_URL
+    sportsdb_base_url = _normalize_base_url(
+        f"https://www.thesportsdb.com/api/v1/json/{sportsdb_api_key}",
+        THE_SPORTS_DB_BASE_URL,
+    )
+    api_hockey_base_url = _normalize_base_url(
+        live_config.get("api_hockey_base_url") or API_HOCKEY_BASE_URL,
+        API_HOCKEY_BASE_URL,
+    )
     api_hockey_key = live_config.get("api_hockey_key") or ""
     api_hockey_host = live_config.get("api_hockey_host") or ""
     api_hockey_khl_league_id = live_config.get("api_hockey_khl_league_id") or API_HOCKEY_KHL_LEAGUE_ID
@@ -997,6 +1016,17 @@ def fetch_khl_live_groups(now_utc: datetime | None = None, force_refresh: bool =
             )
             diagnostics_calls.append(trace_day)
             successful_calls += int(ok_day)
+            if not day_events:
+                day_events_no_league, ok_no_league, trace_no_league = _apihockey_get(
+                    "games",
+                    {"date": current.isoformat()},
+                    api_hockey_base_url,
+                    api_hockey_key,
+                    api_hockey_host,
+                )
+                diagnostics_calls.append(trace_no_league)
+                successful_calls += int(ok_no_league)
+                day_events = day_events_no_league
             for raw_event in day_events:
                 if not _is_khl_event_apihockey(raw_event, api_hockey_khl_league_id):
                     continue

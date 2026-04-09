@@ -872,3 +872,51 @@ def test_admin_live_settings_page_and_save():
         config = get_live_runtime_config()
         assert config["live_provider"] == "api_hockey"
         assert config["api_hockey_key"] == "abc123"
+
+
+def test_fetch_live_groups_apihockey_fallback_without_league(monkeypatch):
+    import app as app_module
+
+    monkeypatch.setattr(
+        app_module,
+        "get_live_runtime_config",
+        lambda: {
+            "live_provider": "api_hockey",
+            "sportsdb_api_key": "3",
+            "api_hockey_base_url": "http://v1.hockey.api-sports.io",
+            "api_hockey_key": "paid-key",
+            "api_hockey_host": "",
+            "api_hockey_khl_league_id": "57",
+        },
+    )
+
+    calls = []
+
+    def fake_get(path: str, params: dict, base_url: str, api_key: str, api_host: str):
+        calls.append((params, base_url))
+        if "league" in params:
+            return [], True, {"url": "mock://league", "ok": True, "events_count": 0, "error": ""}
+        return (
+            [
+                {
+                    "id": 3001,
+                    "date": "2026-04-09T12:00:00+00:00",
+                    "league": {"id": 57, "name": "KHL", "sport": "Hockey"},
+                    "teams": {"home": {"name": "Avangard Omsk"}, "away": {"name": "CSKA Moscow"}},
+                    "scores": {"home": 1, "away": 0},
+                    "status": {"long": "Match Finished", "short": "FT"},
+                }
+            ],
+            True,
+            {"url": "mock://date", "ok": True, "events_count": 1, "error": ""},
+        )
+
+    monkeypatch.setattr(app_module, "_apihockey_get", fake_get)
+    app_module._live_cache["timestamp"] = None
+    app_module._live_cache["payload"] = None
+
+    groups = fetch_khl_live_groups(now_utc=datetime(2026, 4, 9, 18, 0), force_refresh=True)
+    assert groups["recent"]
+    assert any("league" in params for params, _base in calls)
+    assert any("league" not in params for params, _base in calls)
+    assert all(base_url.startswith("https://") for _params, base_url in calls)
