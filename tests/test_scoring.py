@@ -622,6 +622,48 @@ def test_sync_uses_stored_finished_live_events_when_api_window_misses(monkeypatc
         assert match.away_score == 2
 
 
+def test_fetch_live_groups_uses_stored_events_when_provider_returns_empty(monkeypatch):
+    app = make_app()
+    with app.app_context():
+        db.session.add(
+            LiveEventStore(
+                source_key="api_hockey:future-11",
+                provider="api_hockey",
+                home_team="Металлург",
+                away_team="Торпедо",
+                event_datetime=datetime(2026, 4, 11, 10, 30),
+                is_finished=False,
+            )
+        )
+        db.session.commit()
+
+        import app as app_module
+
+        monkeypatch.setattr(
+            app_module,
+            "get_live_runtime_config",
+            lambda: {
+                "live_provider": "api_hockey",
+                "sportsdb_api_key": "3",
+                "api_hockey_base_url": "https://mock.api",
+                "api_hockey_key": "paid-key",
+                "api_hockey_host": "",
+                "api_hockey_khl_league_id": "57",
+            },
+        )
+        monkeypatch.setattr(
+            app_module,
+            "_apihockey_get",
+            lambda *args, **kwargs: ([], True, {"url": "mock://empty", "ok": True, "events_count": 0, "error": ""}),
+        )
+        app_module._live_cache["timestamp"] = None
+        app_module._live_cache["payload"] = None
+
+        groups = app_module.fetch_khl_live_groups(now_utc=datetime(2026, 4, 10, 12, 0), force_refresh=True)
+        team_pairs = {(e["home_team"], e["away_team"]) for e in groups["upcoming"]}
+        assert ("Металлург", "Торпедо") in team_pairs
+
+
 def test_admin_matches_shows_late_rounds_first():
     app = make_app()
     with app.app_context():

@@ -1293,6 +1293,47 @@ def fetch_khl_live_groups(
                     seen_ids.add(event_id)
                 all_events.append(_normalize_live_event(raw_event, now_utc))
 
+    existing_signatures = {
+        (
+            str(event.get("datetime_utc") or ""),
+            str(event.get("home_team") or ""),
+            str(event.get("away_team") or ""),
+        )
+        for event in all_events
+    }
+    if has_app_context():
+        stored_start = now_utc - window
+        stored_end = now_utc + window
+        stored_events = (
+            LiveEventStore.query.filter(
+                LiveEventStore.provider == provider,
+                LiveEventStore.event_datetime >= stored_start,
+                LiveEventStore.event_datetime <= stored_end,
+            )
+            .order_by(LiveEventStore.event_datetime.asc())
+            .all()
+        )
+        for record in stored_events:
+            signature = (str(record.event_datetime), record.home_team, record.away_team)
+            if signature in existing_signatures:
+                continue
+            date_label, time_label = _to_msk_label(record.event_datetime)
+            all_events.append(
+                {
+                    "id": record.source_key,
+                    "home_team": record.home_team,
+                    "away_team": record.away_team,
+                    "home_score": record.home_score,
+                    "away_score": record.away_score,
+                    "status": "FINISHED" if record.is_finished else "",
+                    "datetime_utc": record.event_datetime,
+                    "date_label": date_label,
+                    "time_label": time_label,
+                    "is_live": False,
+                    "is_finished": bool(record.is_finished),
+                }
+            )
+
     for event in all_events:
         dt = event["datetime_utc"]
         if event["is_live"]:
