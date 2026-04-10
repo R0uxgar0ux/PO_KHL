@@ -2,6 +2,11 @@
 {% block content %}
 <h2>Панель внесения результатов</h2>
 <p>Форма повторяет прогнозы по сериям: итог серии и точные счета матчей. Ниже есть кнопки блокировки прогноза по каждому матчу.</p>
+<form method="post" class="inline-form">
+  <input type="hidden" name="action" value="sync_live" />
+  <button type="submit">Импортировать завершённые матчи из LIVE</button>
+</form>
+<p class="muted">Сопоставление идёт по паре команд серии (A/B), затем по хозяева/гости и дате матча. Автосинхронизация выполняется при открытии LIVE и админ-результатов (не чаще 1 раза в 5 минут), а завершённые матчи сохраняются в БД для повторного импорта.</p>
 
 {% for conference_code in ['W', 'E'] %}
   <h3 class="conference-title">{{ conference_labels[conference_code] }}</h3>
