@@ -4,6 +4,7 @@ from app import (
     PlayoffSeries,
     SeriesPrediction,
     User,
+    LiveEventStore,
     create_app,
     db,
     leaderboard,
@@ -549,6 +550,76 @@ def test_admin_results_can_sync_finished_live_matches(monkeypatch):
         assert match is not None
         assert match.home_score == 2
         assert match.away_score == 1
+
+
+def test_admin_results_get_runs_auto_sync(monkeypatch):
+    app = make_app()
+    with app.app_context():
+        admin = User(username="adminautosync", password_hash="x", display_name="adminautosync", is_admin=True)
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="QF")
+        db.session.add_all([admin, series])
+        db.session.commit()
+
+        import app as app_module
+
+        monkeypatch.setattr(
+            app_module,
+            "auto_sync_live_results_if_needed",
+            lambda: {"created": 1, "updated": 0, "unchanged": 0, "skipped": 0},
+        )
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = admin.id
+            response = client.get("/admin/results")
+            assert response.status_code == 200
+            html = response.get_data(as_text=True)
+            assert "Автосинхронизация LIVE" in html
+
+
+def test_sync_uses_stored_finished_live_events_when_api_window_misses(monkeypatch):
+    app = make_app()
+    with app.app_context():
+        series = PlayoffSeries(team_a="Локомотив", team_b="Салават Юлаев", conference="W", round_code="QF")
+        db.session.add(series)
+        db.session.add(
+            LiveEventStore(
+                source_key="api_hockey:old-event-1",
+                provider="api_hockey",
+                home_team="Локомотив",
+                away_team="Салават Юлаев",
+                event_datetime=datetime(2026, 4, 1, 16, 0),
+                home_score=3,
+                away_score=2,
+                is_finished=True,
+            )
+        )
+        db.session.commit()
+
+        import app as app_module
+
+        monkeypatch.setattr(
+            app_module,
+            "fetch_khl_live_groups",
+            lambda **kwargs: {
+                "recent": [],
+                "live": [],
+                "upcoming": [],
+                "error": "",
+                "diagnostics": {"provider": "api_hockey"},
+                "source_label": "test",
+            },
+        )
+
+        stats = app_module.sync_live_results_to_series()
+        assert stats["created"] == 1
+
+        from app import Match
+
+        match = Match.query.filter_by(series_id=series.id).first()
+        assert match is not None
+        assert match.home_score == 3
+        assert match.away_score == 2
 
 
 def test_admin_matches_shows_late_rounds_first():

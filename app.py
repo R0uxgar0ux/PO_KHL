@@ -43,6 +43,8 @@ KHL_LEAGUE_ID = "4920"
 LIVE_WINDOW_DAYS = 1
 LIVE_CACHE_TTL_SECONDS = 120
 _live_cache: dict[str, object] = {"timestamp": None, "payload": None}
+LIVE_AUTO_SYNC_TTL_SECONDS = 300
+_live_auto_sync_state: dict[str, object] = {"timestamp": None}
 KHL_RU_TEAMS = {
     "avangard omsk": "Авангард",
     "lokomotiv yaroslavl": "Локомотив",
@@ -287,6 +289,20 @@ class AppSetting(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(80), unique=True, nullable=False)
     value = db.Column(db.String(500), nullable=False, default="")
+
+
+class LiveEventStore(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    source_key = db.Column(db.String(200), unique=True, nullable=False)
+    provider = db.Column(db.String(40), nullable=False, default="")
+    home_team = db.Column(db.String(120), nullable=False, default="")
+    away_team = db.Column(db.String(120), nullable=False, default="")
+    event_datetime = db.Column(db.DateTime, nullable=False)
+    home_score = db.Column(db.Integer)
+    away_score = db.Column(db.Integer)
+    is_finished = db.Column(db.Boolean, nullable=False, default=False)
+    last_seen_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    applied_at = db.Column(db.DateTime)
 
 
 LIVE_SETTINGS_DEFAULTS = {
@@ -991,7 +1007,17 @@ def _normalize_apihockey_event(event: dict, now_utc: datetime) -> dict:
     status = event.get("status") or {}
     status_long = (status.get("long") or "").strip()
     status_short = (status.get("short") or "").strip().upper()
-    is_live = status_short in {"1", "2", "3", "LIVE", "INPLAY", "OT", "SO"} or "live" in status_long.lower()
+    status_short_compact = status_short.replace(" ", "")
+    elapsed = status.get("elapsed")
+    has_period_marker = "P" in status_short_compact and any(ch.isdigit() for ch in status_short_compact)
+    is_live = (
+        status_short in {"1", "2", "3", "P", "LIVE", "INPLAY", "OT", "SO"}
+        or has_period_marker
+        or "live" in status_long.lower()
+        or "period" in status_long.lower()
+        or "in play" in status_long.lower()
+        or (isinstance(elapsed, int) and elapsed > 0 and status_short not in {"FT", "AOT", "AP", "FINISHED"})
+    )
     is_finished = status_short in {"FT", "AOT", "AP", "FINISHED"} or "finished" in status_long.lower()
     return {
         "id": event.get("id"),
@@ -1009,8 +1035,37 @@ def _normalize_apihockey_event(event: dict, now_utc: datetime) -> dict:
 
 
 def sync_live_results_to_series() -> dict[str, int]:
-    groups = fetch_khl_live_groups(force_refresh=True)
-    events = list(groups.get("recent", [])) + list(groups.get("live", []))
+    groups = fetch_khl_live_groups(force_refresh=True, window_days=7)
+    provider = str((groups.get("diagnostics") or {}).get("provider") or "unknown")
+    events = list(groups.get("recent", [])) + list(groups.get("live", [])) + list(groups.get("upcoming", []))
+    now_utc = datetime.utcnow()
+
+    for event in events:
+        dt_utc = event.get("datetime_utc")
+        home_team = event.get("home_team")
+        away_team = event.get("away_team")
+        if not isinstance(dt_utc, datetime) or not isinstance(home_team, str) or not isinstance(away_team, str):
+            continue
+        event_id = str(event.get("id") or f"{dt_utc.isoformat()}:{home_team}:{away_team}")
+        source_key = f"{provider}:{event_id}"
+        stored = LiveEventStore.query.filter_by(source_key=source_key).first()
+        if stored is None:
+            stored = LiveEventStore(source_key=source_key)
+            db.session.add(stored)
+        stored.provider = provider
+        stored.home_team = home_team
+        stored.away_team = away_team
+        stored.event_datetime = dt_utc
+        stored.home_score = event.get("home_score")
+        stored.away_score = event.get("away_score")
+        stored.is_finished = bool(event.get("is_finished"))
+        stored.last_seen_at = now_utc
+
+    records = (
+        LiveEventStore.query.filter_by(is_finished=True)
+        .order_by(LiveEventStore.event_datetime.asc(), LiveEventStore.id.asc())
+        .all()
+    )
     series_list = PlayoffSeries.query.all()
     series_by_teams: dict[frozenset[str], list[PlayoffSeries]] = defaultdict(list)
     for series in series_list:
@@ -1018,16 +1073,15 @@ def sync_live_results_to_series() -> dict[str, int]:
 
     created = 0
     updated = 0
+    unchanged = 0
     skipped = 0
 
-    for event in events:
-        if not event.get("is_finished"):
-            continue
-        home_team = event.get("home_team")
-        away_team = event.get("away_team")
-        home_score = event.get("home_score")
-        away_score = event.get("away_score")
-        if not isinstance(home_team, str) or not isinstance(away_team, str):
+    for record in records:
+        home_team = record.home_team
+        away_team = record.away_team
+        home_score = record.home_score
+        away_score = record.away_score
+        if not home_team or not away_team:
             skipped += 1
             continue
         if not isinstance(home_score, int) or not isinstance(away_score, int):
@@ -1040,9 +1094,9 @@ def sync_live_results_to_series() -> dict[str, int]:
             continue
         series = sorted(candidates, key=lambda item: ROUND_SORT_PRIORITY.get(item.round_code, 99))[0]
 
-        event_dt = event.get("datetime_utc")
+        event_dt = record.event_datetime
         if not isinstance(event_dt, datetime):
-            event_dt = datetime.utcnow()
+            event_dt = now_utc
 
         matching_matches = sorted(
             [m for m in series.matches if m.home_team == home_team and m.away_team == away_team],
@@ -1065,20 +1119,40 @@ def sync_live_results_to_series() -> dict[str, int]:
                     away_score=away_score,
                 )
             )
+            record.applied_at = now_utc
             created += 1
             continue
 
         if match.home_score == home_score and match.away_score == away_score:
+            if record.applied_at is None:
+                record.applied_at = now_utc
+            unchanged += 1
             continue
         match.home_score = home_score
         match.away_score = away_score
+        record.applied_at = now_utc
         updated += 1
 
     db.session.commit()
-    return {"created": created, "updated": updated, "skipped": skipped}
+    return {"created": created, "updated": updated, "unchanged": unchanged, "skipped": skipped}
 
 
-def fetch_khl_live_groups(now_utc: datetime | None = None, force_refresh: bool = False) -> dict[str, list[dict]]:
+def auto_sync_live_results_if_needed() -> dict[str, int] | None:
+    now_utc = datetime.utcnow()
+    last_synced = _live_auto_sync_state.get("timestamp")
+    if isinstance(last_synced, datetime):
+        if (now_utc - last_synced).total_seconds() < LIVE_AUTO_SYNC_TTL_SECONDS:
+            return None
+    stats = sync_live_results_to_series()
+    _live_auto_sync_state["timestamp"] = now_utc
+    return stats
+
+
+def fetch_khl_live_groups(
+    now_utc: datetime | None = None,
+    force_refresh: bool = False,
+    window_days: int | None = None,
+) -> dict[str, list[dict]]:
     now_utc = now_utc or datetime.utcnow()
     live_config = get_live_runtime_config()
     provider = live_config["live_provider"]
@@ -1096,9 +1170,16 @@ def fetch_khl_live_groups(now_utc: datetime | None = None, force_refresh: bool =
     api_hockey_host = live_config.get("api_hockey_host") or ""
     api_hockey_khl_league_id = live_config.get("api_hockey_khl_league_id") or API_HOCKEY_KHL_LEAGUE_ID
 
+    effective_window_days = max(1, int(window_days or LIVE_WINDOW_DAYS))
+
     cached_at = _live_cache.get("timestamp")
     cached_payload = _live_cache.get("payload")
-    if not force_refresh and isinstance(cached_at, datetime) and isinstance(cached_payload, dict):
+    if (
+        not force_refresh
+        and window_days is None
+        and isinstance(cached_at, datetime)
+        and isinstance(cached_payload, dict)
+    ):
         cached_provider = str((cached_payload.get("diagnostics") or {}).get("provider") or "")
         if cached_provider == provider and (now_utc - cached_at).total_seconds() <= LIVE_CACHE_TTL_SECONDS:
             payload = dict(cached_payload)
@@ -1111,7 +1192,7 @@ def fetch_khl_live_groups(now_utc: datetime | None = None, force_refresh: bool =
     upcoming: list[dict] = []
     live: list[dict] = []
     recent: list[dict] = []
-    window = timedelta(days=LIVE_WINDOW_DAYS)
+    window = timedelta(days=effective_window_days)
 
     successful_calls = 0
     diagnostics_calls: list[dict] = []
@@ -1230,8 +1311,8 @@ def fetch_khl_live_groups(now_utc: datetime | None = None, force_refresh: bool =
     recent.sort(key=lambda item: item["datetime_utc"] or datetime.min, reverse=True)
 
     today_msk = (now_utc + timedelta(hours=3)).date()
-    upcoming_dates = [today_msk + timedelta(days=offset) for offset in range(0, LIVE_WINDOW_DAYS + 1)]
-    recent_dates = [today_msk - timedelta(days=offset) for offset in range(1, LIVE_WINDOW_DAYS + 1)]
+    upcoming_dates = [today_msk + timedelta(days=offset) for offset in range(0, effective_window_days + 1)]
+    recent_dates = [today_msk - timedelta(days=offset) for offset in range(1, effective_window_days + 1)]
     upcoming_day_buckets = _build_day_buckets(upcoming, upcoming_dates)
     recent_day_buckets = _build_day_buckets(recent, recent_dates)
 
@@ -1262,8 +1343,9 @@ def fetch_khl_live_groups(now_utc: datetime | None = None, force_refresh: bool =
         "diagnostics": diagnostics,
         "source_label": source_label,
     }
-    _live_cache["timestamp"] = now_utc
-    _live_cache["payload"] = payload
+    if window_days is None:
+        _live_cache["timestamp"] = now_utc
+        _live_cache["payload"] = payload
     return payload
 
 def register_routes(app: Flask) -> None:
@@ -1477,6 +1559,7 @@ def register_routes(app: Flask) -> None:
         user = current_user()
         if not user:
             return redirect(url_for("login"))
+        auto_sync_live_results_if_needed()
         force_refresh = request.args.get("nocache") == "1"
         groups = fetch_khl_live_groups(force_refresh=force_refresh)
         if groups["error"]:
@@ -1579,6 +1662,7 @@ def register_routes(app: Flask) -> None:
 
             _live_cache["timestamp"] = None
             _live_cache["payload"] = None
+            _live_auto_sync_state["timestamp"] = None
             flash("LIVE API настройки сохранены")
             return redirect(url_for("admin_live_settings"))
 
@@ -1600,7 +1684,8 @@ def register_routes(app: Flask) -> None:
                 stats = sync_live_results_to_series()
                 flash(
                     "Импорт из LIVE выполнен: "
-                    f"создано {stats['created']}, обновлено {stats['updated']}, пропущено {stats['skipped']}"
+                    f"создано {stats['created']}, обновлено {stats['updated']}, "
+                    f"без изменений {stats['unchanged']}, пропущено {stats['skipped']}"
                 )
                 return redirect(url_for("admin_results"))
 
@@ -1690,6 +1775,13 @@ def register_routes(app: Flask) -> None:
             db.session.commit()
             flash("Результаты серии сохранены")
             return redirect(focus_url)
+
+        auto_stats = auto_sync_live_results_if_needed()
+        if auto_stats and (auto_stats["created"] > 0 or auto_stats["updated"] > 0):
+            flash(
+                "Автосинхронизация LIVE: "
+                f"создано {auto_stats['created']}, обновлено {auto_stats['updated']}"
+            )
 
         series_list = sort_series_list(PlayoffSeries.query.all(), conference_first=True)
         results_by_series = {series.id: series_results_snapshot(series) for series in series_list}
