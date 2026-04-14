@@ -1088,15 +1088,25 @@ def sync_live_results_to_series() -> dict[str, int]:
             skipped += 1
             continue
 
+        event_dt = record.event_datetime
+        if not isinstance(event_dt, datetime):
+            event_dt = now_utc
+
         candidates = series_by_teams.get(frozenset((home_team, away_team)), [])
         if not candidates:
             skipped += 1
             continue
-        series = sorted(candidates, key=lambda item: ROUND_SORT_PRIORITY.get(item.round_code, 99))[0]
 
-        event_dt = record.event_datetime
-        if not isinstance(event_dt, datetime):
-            event_dt = now_utc
+        def _candidate_rank(item: PlayoffSeries) -> tuple[int, int, int]:
+            has_same_day = any(match.kickoff.date() == event_dt.date() for match in item.matches)
+            has_same_pair = any(match.home_team == home_team and match.away_team == away_team for match in item.matches)
+            return (
+                0 if has_same_day else 1,
+                0 if has_same_pair else 1,
+                -item.id,
+            )
+
+        series = sorted(candidates, key=_candidate_rank)[0]
 
         matching_matches = sorted(
             [m for m in series.matches if m.home_team == home_team and m.away_team == away_team],
@@ -1824,7 +1834,7 @@ def register_routes(app: Flask) -> None:
                 f"создано {auto_stats['created']}, обновлено {auto_stats['updated']}"
             )
 
-        series_list = sort_series_list(PlayoffSeries.query.all(), conference_first=True)
+        series_list = sort_series_list(PlayoffSeries.query.all())
         results_by_series = {series.id: series_results_snapshot(series) for series in series_list}
         locked_games_by_series = {series.id: parse_locked_games(series.locked_game_indices) for series in series_list}
         return render_template(

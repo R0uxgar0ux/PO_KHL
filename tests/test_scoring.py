@@ -664,6 +664,54 @@ def test_fetch_live_groups_uses_stored_events_when_provider_returns_empty(monkey
         assert ("Металлург", "Торпедо") in team_pairs
 
 
+def test_sync_prefers_latest_series_when_team_pair_repeats(monkeypatch):
+    app = make_app()
+    with app.app_context():
+        old_series = PlayoffSeries(team_a="Авангард", team_b="ЦСКА", conference="W", round_code="QF")
+        new_series = PlayoffSeries(team_a="Авангард", team_b="ЦСКА", conference="W", round_code="QF")
+        db.session.add_all([old_series, new_series])
+        db.session.add(
+            LiveEventStore(
+                source_key="api_hockey:avangard-cska-0804",
+                provider="api_hockey",
+                home_team="Авангард",
+                away_team="ЦСКА",
+                event_datetime=datetime(2026, 4, 8, 16, 30),
+                home_score=3,
+                away_score=0,
+                is_finished=True,
+            )
+        )
+        db.session.commit()
+
+        import app as app_module
+
+        monkeypatch.setattr(
+            app_module,
+            "fetch_khl_live_groups",
+            lambda **kwargs: {
+                "recent": [],
+                "live": [],
+                "upcoming": [],
+                "error": "",
+                "diagnostics": {"provider": "api_hockey"},
+                "source_label": "test",
+            },
+        )
+
+        stats = app_module.sync_live_results_to_series()
+        assert stats["created"] == 1
+
+        from app import Match
+
+        old_match_count = Match.query.filter_by(series_id=old_series.id).count()
+        new_match = Match.query.filter_by(series_id=new_series.id).first()
+        assert old_match_count == 0
+        assert new_match is not None
+        assert new_match.home_score == 3
+        assert new_match.away_score == 0
+
+
 def test_admin_matches_shows_late_rounds_first():
     app = make_app()
     with app.app_context():
