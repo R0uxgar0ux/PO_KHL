@@ -990,13 +990,60 @@ def test_live_page_renders_grouped_events(monkeypatch):
         assert response.status_code == 200
         assert "LIVE-центр КХЛ" in html
         assert "Текущие (LIVE)" in html
-        assert "Предстоящие (сегодня + 1 день)" in html
-        assert "Прошедшие (1 день до сегодня)" in html
+        assert "Предстоящие" in html
+        assert "Прошедшие" in html
         assert "Team C" in html
         assert "Team A" in html
         assert "11.04" in html
         assert "12.04" in html
         assert "4" in html
+
+
+def test_fetch_live_groups_includes_today_in_recent_day_buckets(monkeypatch):
+    app = make_app()
+    with app.app_context():
+        db.session.add(
+            LiveEventStore(
+                source_key="api_hockey:today-finished",
+                provider="api_hockey",
+                home_team="Локомотив",
+                away_team="Салават Юлаев",
+                event_datetime=datetime(2026, 4, 10, 7, 0),
+                home_score=3,
+                away_score=2,
+                is_finished=True,
+            )
+        )
+        db.session.commit()
+
+        import app as app_module
+
+        monkeypatch.setattr(
+            app_module,
+            "get_live_runtime_config",
+            lambda: {
+                "live_provider": "api_hockey",
+                "sportsdb_api_key": "3",
+                "api_hockey_base_url": "https://mock.api",
+                "api_hockey_key": "paid-key",
+                "api_hockey_host": "",
+                "api_hockey_khl_league_id": "57",
+            },
+        )
+        monkeypatch.setattr(
+            app_module,
+            "_apihockey_get",
+            lambda *args, **kwargs: ([], True, {"url": "mock://empty", "ok": True, "events_count": 0, "error": ""}),
+        )
+        app_module._live_cache["timestamp"] = None
+        app_module._live_cache["payload"] = None
+
+        groups = app_module.fetch_khl_live_groups(
+            now_utc=datetime(2026, 4, 10, 12, 0),
+            force_refresh=True,
+        )
+        assert groups["recent_days"][0]["date_label"] == "10.04"
+        assert groups["recent_days"][0]["events"]
 
 
 def test_live_team_name_translation_to_russian():

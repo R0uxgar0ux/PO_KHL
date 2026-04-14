@@ -211,6 +211,29 @@ button.danger:hover { background: #2b2b2b; }
   gap: 6px;
 }
 
+.series-stage-separator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0;
+}
+
+.series-stage-separator::before,
+.series-stage-separator::after {
+  content: "";
+  height: 1px;
+  background: #dbe2ea;
+  flex: 1;
+}
+
+.series-stage-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
 .series-presets {
   display: flex;
   flex-wrap: wrap;

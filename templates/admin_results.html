@@ -30,6 +30,9 @@
         </div>
 
         <div class="scoreline-block">
+          <div class="series-stage-separator" role="separator" aria-label="Стадия серии">
+            <span class="series-stage-label">Стадия: {{ round_labels.get(series.round_code, series.round_code) }}</span>
+          </div>
           <label>Итог серии</label>
           <div class="series-presets">
             {% for short in ['4:0','4:1','4:2','4:3','3:4','2:4','1:4','0:4'] %}
@@ -51,6 +54,10 @@
             </select>
             <span class="team-name-wrap"><span class="team-name-with-logo"><img class="team-logo" src="{{ team_logo_url(series.team_b) }}" alt="" loading="lazy" /><span>{{ series.team_b }}</span></span></span>
           </div>
+        </div>
+
+        <div class="series-stage-separator" role="separator" aria-label="Счёты матчей">
+          <span class="series-stage-label">Счёты матчей</span>
         </div>
 
         <div class="match-score-grid admin-match-score-grid" data-games-block>

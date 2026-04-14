@@ -1363,7 +1363,7 @@ def fetch_khl_live_groups(
 
     today_msk = (now_utc + timedelta(hours=3)).date()
     upcoming_dates = [today_msk + timedelta(days=offset) for offset in range(0, effective_window_days + 1)]
-    recent_dates = [today_msk - timedelta(days=offset) for offset in range(1, effective_window_days + 1)]
+    recent_dates = [today_msk - timedelta(days=offset) for offset in range(0, effective_window_days + 1)]
     upcoming_day_buckets = _build_day_buckets(upcoming, upcoming_dates)
     recent_day_buckets = _build_day_buckets(recent, recent_dates)
 
