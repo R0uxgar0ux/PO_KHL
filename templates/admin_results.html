@@ -9,7 +9,11 @@
 <p class="muted">Сопоставление идёт по паре команд серии (A/B), затем по хозяева/гости и дате матча. Автосинхронизация выполняется при открытии LIVE и админ-результатов (не чаще 1 раза в 5 минут), а завершённые матчи сохраняются в БД для повторного импорта.</p>
 
 <div class="series-grid">
-  {% for series in series_list %}
+  {% for stage in grouped_series_by_stage %}
+    <div class="results-stage-divider" id="stage-{{ stage.round_code }}">
+      <span>{{ stage.round_label }}</span>
+    </div>
+    {% for series in stage.series_list %}
     {% set result = results_by_series.get(series.id, {'wins_a': 0, 'wins_b': 0, 'scores': []}) %}
     {% set locked_games = locked_games_by_series.get(series.id, []) %}
     <section class="card series-card-modern series-card-wide" id="series-{{ series.id }}">
@@ -96,6 +100,7 @@
         {% endfor %}
       </div>
     </section>
+    {% endfor %}
   {% else %}
     <p>Пока нет серий.</p>
   {% endfor %}

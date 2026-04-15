@@ -329,6 +329,25 @@ button.danger:hover { background: #2b2b2b; }
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.results-stage-divider {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0 2px;
+  color: #0f172a;
+  font-weight: 800;
+  font-size: 22px;
+}
+
+.results-stage-divider::before,
+.results-stage-divider::after {
+  content: "";
+  height: 2px;
+  background: #cfd8e3;
+  flex: 1;
+}
 @media (max-width: 900px) {
   .brand { font-size: 24px; }
   .series-head-row h4 { font-size: 42px; }

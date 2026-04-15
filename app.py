@@ -52,20 +52,24 @@ KHL_RU_TEAMS = {
     "yaroslavl": "Локомотив",
     "metallurg magnitogorsk": "Металлург",
     "metallurg": "Металлург",
+    "mmg": "Металлург",
     "magnitogorsk": "Металлург",
     "torpedo nizhny novgorod": "Торпедо",
     "torpedo": "Торпедо",
+    "tor": "Торпедо",
     "nizhny novgorod": "Торпедо",
     "dynamo moscow": "Динамо Москва",
     "dinamo moscow": "Динамо Москва",
     "dynamo moscow": "Динамо Москва",
     "dynamo minsk": "Динамо Минск",
     "dinamo minsk": "Динамо Минск",
+    "dmn": "Динамо Минск",
     "salavat yulaev ufa": "Салават Юлаев",
     "salavat yulaev": "Салават Юлаев",
     "salavat ufa": "Салават Юлаев",
     "ak bars kazan": "Ак Барс",
     "ak bars": "Ак Барс",
+    "akb": "Ак Барс",
     "bars kazan": "Ак Барс",
     "cska moscow": "ЦСКА",
     "ska saint petersburg": "СКА",
@@ -85,11 +89,15 @@ KHL_TEAM_MARKERS = (
     "avangard",
     "lokomotiv",
     "metallurg",
+    "mmg",
     "torpedo",
+    "tor",
     "dynamo",
     "dinamo",
+    "dmn",
     "salavat",
     "ak bars",
+    "akb",
     "cska",
     "ska",
     "spartak",
@@ -1837,9 +1845,28 @@ def register_routes(app: Flask) -> None:
         series_list = sort_series_list(PlayoffSeries.query.all())
         results_by_series = {series.id: series_results_snapshot(series) for series in series_list}
         locked_games_by_series = {series.id: parse_locked_games(series.locked_game_indices) for series in series_list}
+        stage_order = ["F", "SF", "QF", "R1"]
+        grouped_series_by_stage: list[dict[str, object]] = []
+        known_stage_codes = {series.round_code for series in series_list if series.round_code in stage_order}
+        ordered_stage_codes = [code for code in stage_order if code in known_stage_codes]
+        ordered_stage_codes.extend(
+            sorted({series.round_code for series in series_list if series.round_code not in stage_order})
+        )
+        for stage_code in ordered_stage_codes:
+            stage_series = [series for series in series_list if series.round_code == stage_code]
+            if not stage_series:
+                continue
+            grouped_series_by_stage.append(
+                {
+                    "round_code": stage_code,
+                    "round_label": ROUND_LABELS.get(stage_code, stage_code),
+                    "series_list": stage_series,
+                }
+            )
         return render_template(
             "admin_results.html",
             series_list=series_list,
+            grouped_series_by_stage=grouped_series_by_stage,
             results_by_series=results_by_series,
             locked_games_by_series=locked_games_by_series,
             conference_labels=CONFERENCE_LABELS,

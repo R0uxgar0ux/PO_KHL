@@ -747,6 +747,7 @@ def test_admin_results_shows_late_rounds_first_inside_conference():
             html = response.get_data(as_text=True)
             assert response.status_code == 200
             assert html.find("SFX") < html.find("R1X")
+            assert html.find(">1/2 финала<") < html.find(">1/8 финала<")
 
 
 def test_admin_matches_rejects_same_teams_and_duplicate():
@@ -1049,6 +1050,10 @@ def test_fetch_live_groups_includes_today_in_recent_day_buckets(monkeypatch):
 def test_live_team_name_translation_to_russian():
     assert _normalize_team_name_ru("Avangard Omsk") == "Авангард"
     assert _normalize_team_name_ru("CSKA Moscow") == "ЦСКА"
+    assert _normalize_team_name_ru("MMG") == "Металлург"
+    assert _normalize_team_name_ru("TOR") == "Торпедо"
+    assert _normalize_team_name_ru("AKB") == "Ак Барс"
+    assert _normalize_team_name_ru("DMN") == "Динамо Минск"
     assert _normalize_team_name_ru("Unknown Team Name") == "Unknown Team Name"
 
 
