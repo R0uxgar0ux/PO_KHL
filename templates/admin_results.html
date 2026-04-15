@@ -2,11 +2,18 @@
 {% block content %}
 <h2>Панель внесения результатов</h2>
 <p>Форма повторяет прогнозы по сериям: итог серии и точные счета матчей. Ниже есть кнопки блокировки прогноза по каждому матчу.</p>
+<form method="post" class="inline-form">
+  <input type="hidden" name="action" value="sync_live" />
+  <button type="submit">Импортировать завершённые матчи из LIVE</button>
+</form>
+<p class="muted">Сопоставление идёт по паре команд серии (A/B), затем по хозяева/гости и дате матча. Автосинхронизация выполняется при открытии LIVE и админ-результатов (не чаще 1 раза в 5 минут), а завершённые матчи сохраняются в БД для повторного импорта.</p>
 
-{% for conference_code in ['W', 'E'] %}
-  <h3 class="conference-title">{{ conference_labels[conference_code] }}</h3>
-  <div class="series-grid">
-  {% for series in series_list if series.conference == conference_code %}
+<div class="series-grid">
+  {% for stage in grouped_series_by_stage %}
+    <div class="results-stage-divider" id="stage-{{ stage.round_code }}">
+      <span>{{ stage.round_label }}</span>
+    </div>
+    {% for series in stage.series_list %}
     {% set result = results_by_series.get(series.id, {'wins_a': 0, 'wins_b': 0, 'scores': []}) %}
     {% set locked_games = locked_games_by_series.get(series.id, []) %}
     <section class="card series-card-modern series-card-wide" id="series-{{ series.id }}">
@@ -27,6 +34,9 @@
         </div>
 
         <div class="scoreline-block">
+          <div class="series-stage-separator" role="separator" aria-label="Стадия серии">
+            <span class="series-stage-label">Стадия: {{ round_labels.get(series.round_code, series.round_code) }}</span>
+          </div>
           <label>Итог серии</label>
           <div class="series-presets">
             {% for short in ['4:0','4:1','4:2','4:3','3:4','2:4','1:4','0:4'] %}
@@ -48,6 +58,10 @@
             </select>
             <span class="team-name-wrap"><span class="team-name-with-logo"><img class="team-logo" src="{{ team_logo_url(series.team_b) }}" alt="" loading="lazy" /><span>{{ series.team_b }}</span></span></span>
           </div>
+        </div>
+
+        <div class="series-stage-separator" role="separator" aria-label="Счёты матчей">
+          <span class="series-stage-label">Счёты матчей</span>
         </div>
 
         <div class="match-score-grid admin-match-score-grid" data-games-block>
@@ -86,11 +100,11 @@
         {% endfor %}
       </div>
     </section>
+    {% endfor %}
   {% else %}
-    <p>Пока нет серий в этой конференции.</p>
+    <p>Пока нет серий.</p>
   {% endfor %}
-  </div>
-{% endfor %}
+</div>
 
 <script>
   function normalizeSeriesScore(form) {
