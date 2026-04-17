@@ -1043,127 +1043,13 @@ def _normalize_apihockey_event(event: dict, now_utc: datetime) -> dict:
 
 
 def sync_live_results_to_series() -> dict[str, int]:
-    groups = fetch_khl_live_groups(force_refresh=True, window_days=7)
-    provider = str((groups.get("diagnostics") or {}).get("provider") or "unknown")
-    events = list(groups.get("recent", [])) + list(groups.get("live", [])) + list(groups.get("upcoming", []))
-    now_utc = datetime.utcnow()
-
-    for event in events:
-        dt_utc = event.get("datetime_utc")
-        home_team = event.get("home_team")
-        away_team = event.get("away_team")
-        if not isinstance(dt_utc, datetime) or not isinstance(home_team, str) or not isinstance(away_team, str):
-            continue
-        event_id = str(event.get("id") or f"{dt_utc.isoformat()}:{home_team}:{away_team}")
-        source_key = f"{provider}:{event_id}"
-        stored = LiveEventStore.query.filter_by(source_key=source_key).first()
-        if stored is None:
-            stored = LiveEventStore(source_key=source_key)
-            db.session.add(stored)
-        stored.provider = provider
-        stored.home_team = home_team
-        stored.away_team = away_team
-        stored.event_datetime = dt_utc
-        stored.home_score = event.get("home_score")
-        stored.away_score = event.get("away_score")
-        stored.is_finished = bool(event.get("is_finished"))
-        stored.last_seen_at = now_utc
-
-    records = (
-        LiveEventStore.query.filter_by(is_finished=True)
-        .order_by(LiveEventStore.event_datetime.asc(), LiveEventStore.id.asc())
-        .all()
-    )
-    series_list = PlayoffSeries.query.all()
-    series_by_teams: dict[frozenset[str], list[PlayoffSeries]] = defaultdict(list)
-    for series in series_list:
-        series_by_teams[frozenset((series.team_a, series.team_b))].append(series)
-
-    created = 0
-    updated = 0
-    unchanged = 0
-    skipped = 0
-
-    for record in records:
-        home_team = record.home_team
-        away_team = record.away_team
-        home_score = record.home_score
-        away_score = record.away_score
-        if not home_team or not away_team:
-            skipped += 1
-            continue
-        if not isinstance(home_score, int) or not isinstance(away_score, int):
-            skipped += 1
-            continue
-
-        event_dt = record.event_datetime
-        if not isinstance(event_dt, datetime):
-            event_dt = now_utc
-
-        candidates = series_by_teams.get(frozenset((home_team, away_team)), [])
-        if not candidates:
-            skipped += 1
-            continue
-
-        def _candidate_rank(item: PlayoffSeries) -> tuple[int, int, int]:
-            has_same_day = any(match.kickoff.date() == event_dt.date() for match in item.matches)
-            has_same_pair = any(match.home_team == home_team and match.away_team == away_team for match in item.matches)
-            return (
-                0 if has_same_day else 1,
-                0 if has_same_pair else 1,
-                -item.id,
-            )
-
-        series = sorted(candidates, key=_candidate_rank)[0]
-
-        matching_matches = sorted(
-            [m for m in series.matches if m.home_team == home_team and m.away_team == away_team],
-            key=lambda m: m.kickoff,
-        )
-        match = next((m for m in matching_matches if m.kickoff.date() == event_dt.date()), None)
-        if match is None:
-            match = next((m for m in matching_matches if not m.is_finished), None)
-
-        if match is None:
-            db.session.add(
-                Match(
-                    home_team=home_team,
-                    away_team=away_team,
-                    kickoff=event_dt,
-                    conference=series.conference,
-                    round_code=series.round_code,
-                    series_id=series.id,
-                    home_score=home_score,
-                    away_score=away_score,
-                )
-            )
-            record.applied_at = now_utc
-            created += 1
-            continue
-
-        if match.home_score == home_score and match.away_score == away_score:
-            if record.applied_at is None:
-                record.applied_at = now_utc
-            unchanged += 1
-            continue
-        match.home_score = home_score
-        match.away_score = away_score
-        record.applied_at = now_utc
-        updated += 1
-
-    db.session.commit()
-    return {"created": created, "updated": updated, "unchanged": unchanged, "skipped": skipped}
+    # Сохранение результатов серий из LIVE отключено.
+    # Результаты и счета матчей вносятся только вручную в админке /admin/results.
+    return {"created": 0, "updated": 0, "unchanged": 0, "skipped": 0}
 
 
 def auto_sync_live_results_if_needed() -> dict[str, int] | None:
-    now_utc = datetime.utcnow()
-    last_synced = _live_auto_sync_state.get("timestamp")
-    if isinstance(last_synced, datetime):
-        if (now_utc - last_synced).total_seconds() < LIVE_AUTO_SYNC_TTL_SECONDS:
-            return None
-    stats = sync_live_results_to_series()
-    _live_auto_sync_state["timestamp"] = now_utc
-    return stats
+    return None
 
 
 def fetch_khl_live_groups(
@@ -1618,7 +1504,6 @@ def register_routes(app: Flask) -> None:
         user = current_user()
         if not user:
             return redirect(url_for("login"))
-        auto_sync_live_results_if_needed()
         force_refresh = request.args.get("nocache") == "1"
         groups = fetch_khl_live_groups(force_refresh=force_refresh)
         if groups["error"]:
@@ -1770,9 +1655,6 @@ def register_routes(app: Flask) -> None:
 
             wins_a = int(request.form["wins_a"])
             wins_b = int(request.form["wins_b"])
-            if 4 not in (wins_a, wins_b):
-                flash("Серия играется до 4 побед — одна из команд должна иметь 4")
-                return redirect(focus_url)
             if wins_a < 0 or wins_b < 0 or wins_a > 4 or wins_b > 4:
                 flash("Некорректный счет серии")
                 return redirect(focus_url)
@@ -1834,13 +1716,6 @@ def register_routes(app: Flask) -> None:
             db.session.commit()
             flash("Результаты серии сохранены")
             return redirect(focus_url)
-
-        auto_stats = auto_sync_live_results_if_needed()
-        if auto_stats and (auto_stats["created"] > 0 or auto_stats["updated"] > 0):
-            flash(
-                "Автосинхронизация LIVE: "
-                f"создано {auto_stats['created']}, обновлено {auto_stats['updated']}"
-            )
 
         series_list = sort_series_list(PlayoffSeries.query.all())
         results_by_series = {series.id: series_results_snapshot(series) for series in series_list}

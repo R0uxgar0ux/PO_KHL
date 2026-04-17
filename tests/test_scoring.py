@@ -375,6 +375,44 @@ def test_admin_results_validate_home_away_rotation_against_series_score():
             assert Match.query.filter_by(series_id=series.id).count() == 0
 
 
+def test_admin_results_allows_partial_series_score_save():
+    app = make_app()
+    with app.app_context():
+        admin = User(username="adm_partial", password_hash="x", display_name="adm_partial", is_admin=True)
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="QF")
+        db.session.add_all([admin, series])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = admin.id
+
+            response = client.post(
+                "/admin/results",
+                data={
+                    "action": "save_results",
+                    "series_id": str(series.id),
+                    "wins_a": "2",
+                    "wins_b": "0",
+                    "game_home_scores": ["1", "2"],
+                    "game_away_scores": ["0", "1"],
+                },
+                follow_redirects=True,
+            )
+            html = response.get_data(as_text=True)
+            assert response.status_code == 200
+            assert "Результаты серии сохранены" in html
+
+        from app import Match
+
+        matches = Match.query.filter_by(series_id=series.id).order_by(Match.id.asc()).all()
+        assert len(matches) == 2
+        assert matches[0].home_score == 1
+        assert matches[0].away_score == 0
+        assert matches[1].home_score == 2
+        assert matches[1].away_score == 1
+
+
 def test_leaderboard_applies_points_adjustment():
     app = make_app()
     with app.app_context():
@@ -503,56 +541,23 @@ def test_admin_results_redirects_back_to_series_anchor():
             assert response.headers['Location'].endswith(f'/admin/results#series-{series.id}')
 
 
-def test_admin_results_can_sync_finished_live_matches(monkeypatch):
+def test_admin_results_has_no_live_sync_controls():
     app = make_app()
     with app.app_context():
         admin = User(username="adminsync", password_hash="x", display_name="adminsync", is_admin=True)
-        series = PlayoffSeries(team_a="Локомотив", team_b="Салават Юлаев", conference="W", round_code="QF")
-        db.session.add_all([admin, series])
+        db.session.add(admin)
         db.session.commit()
-
-        import app as app_module
-
-        monkeypatch.setattr(
-            app_module,
-            "fetch_khl_live_groups",
-            lambda **kwargs: {
-                "recent": [
-                    {
-                        "home_team": "Локомотив",
-                        "away_team": "Салават Юлаев",
-                        "home_score": 2,
-                        "away_score": 1,
-                        "is_finished": True,
-                        "is_live": False,
-                        "datetime_utc": datetime(2026, 4, 9, 12, 0),
-                    }
-                ],
-                "live": [],
-                "upcoming": [],
-                "error": "",
-                "diagnostics": {},
-                "source_label": "test",
-            },
-        )
 
         with app.test_client() as client:
             with client.session_transaction() as sess:
                 sess["user_id"] = admin.id
-            response = client.post("/admin/results", data={"action": "sync_live"}, follow_redirects=True)
+            response = client.get("/admin/results")
             assert response.status_code == 200
             html = response.get_data(as_text=True)
-            assert "Импорт из LIVE выполнен" in html
-
-        from app import Match
-
-        match = Match.query.filter_by(series_id=series.id).first()
-        assert match is not None
-        assert match.home_score == 2
-        assert match.away_score == 1
+            assert "Импортировать завершённые матчи из LIVE" not in html
 
 
-def test_admin_results_get_runs_auto_sync(monkeypatch):
+def test_admin_results_get_does_not_run_auto_sync_flash(monkeypatch):
     app = make_app()
     with app.app_context():
         admin = User(username="adminautosync", password_hash="x", display_name="adminautosync", is_admin=True)
@@ -565,7 +570,7 @@ def test_admin_results_get_runs_auto_sync(monkeypatch):
         monkeypatch.setattr(
             app_module,
             "auto_sync_live_results_if_needed",
-            lambda: {"created": 1, "updated": 0, "unchanged": 0, "skipped": 0},
+            lambda: {"created": 99, "updated": 99, "unchanged": 0, "skipped": 0},
         )
 
         with app.test_client() as client:
@@ -574,7 +579,7 @@ def test_admin_results_get_runs_auto_sync(monkeypatch):
             response = client.get("/admin/results")
             assert response.status_code == 200
             html = response.get_data(as_text=True)
-            assert "Автосинхронизация LIVE" in html
+            assert "Автосинхронизация LIVE" not in html
 
 
 def test_sync_uses_stored_finished_live_events_when_api_window_misses(monkeypatch):
@@ -612,14 +617,13 @@ def test_sync_uses_stored_finished_live_events_when_api_window_misses(monkeypatc
         )
 
         stats = app_module.sync_live_results_to_series()
-        assert stats["created"] == 1
+        assert stats["created"] == 0
+        assert stats["updated"] == 0
 
         from app import Match
 
         match = Match.query.filter_by(series_id=series.id).first()
-        assert match is not None
-        assert match.home_score == 3
-        assert match.away_score == 2
+        assert match is None
 
 
 def test_fetch_live_groups_uses_stored_events_when_provider_returns_empty(monkeypatch):
@@ -700,16 +704,14 @@ def test_sync_prefers_latest_series_when_team_pair_repeats(monkeypatch):
         )
 
         stats = app_module.sync_live_results_to_series()
-        assert stats["created"] == 1
+        assert stats["created"] == 0
 
         from app import Match
 
         old_match_count = Match.query.filter_by(series_id=old_series.id).count()
         new_match = Match.query.filter_by(series_id=new_series.id).first()
         assert old_match_count == 0
-        assert new_match is not None
-        assert new_match.home_score == 3
-        assert new_match.away_score == 0
+        assert new_match is None
 
 
 def test_admin_matches_shows_late_rounds_first():
