@@ -1624,6 +1624,15 @@ def register_routes(app: Flask) -> None:
 
         if request.method == "POST":
             action = request.form.get("action", "save_results")
+            if action == "sync_live":
+                stats = sync_live_results_to_series()
+                flash(
+                    "Импорт из LIVE выполнен: "
+                    f"создано {stats['created']}, обновлено {stats['updated']}, "
+                    f"без изменений {stats['unchanged']}, пропущено {stats['skipped']}"
+                )
+                return redirect(url_for("admin_results"))
+
             series_id = int(request.form["series_id"])
             series = PlayoffSeries.query.get_or_404(series_id)
             focus_url = f"{url_for('admin_results')}#series-{series.id}"
