@@ -1664,6 +1664,11 @@ def register_routes(app: Flask) -> None:
                 flash("В серии максимум 7 матчей")
                 return redirect(focus_url)
 
+            existing_matches_count = Match.query.filter_by(series_id=series.id).count()
+            if games_count == 0 and existing_matches_count > 0:
+                flash("Счет 0:0 не применен: уже есть сохраненные результаты матчей в серии")
+                return redirect(focus_url)
+
             raw_home_scores = request.form.getlist("game_home_scores")[:games_count]
             raw_away_scores = request.form.getlist("game_away_scores")[:games_count]
             if len(raw_home_scores) != games_count or len(raw_away_scores) != games_count:

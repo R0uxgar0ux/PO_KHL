@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from app import (
+    Match,
     PlayoffSeries,
     SeriesPrediction,
     User,
@@ -411,6 +412,50 @@ def test_admin_results_allows_partial_series_score_save():
         assert matches[0].away_score == 0
         assert matches[1].home_score == 2
         assert matches[1].away_score == 1
+
+
+def test_admin_results_does_not_erase_existing_matches_on_zero_zero_save():
+    app = make_app()
+    with app.app_context():
+        admin = User(username="adm_zero_guard", password_hash="x", display_name="adm_zero_guard", is_admin=True)
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="QF")
+        db.session.add_all([admin, series])
+        db.session.commit()
+        db.session.add(
+            Match(
+                home_team="A",
+                away_team="B",
+                kickoff=datetime(2026, 4, 20, 16, 0),
+                conference="W",
+                round_code="QF",
+                series_id=series.id,
+                home_score=3,
+                away_score=1,
+            )
+        )
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = admin.id
+            response = client.post(
+                "/admin/results",
+                data={
+                    "action": "save_results",
+                    "series_id": str(series.id),
+                    "wins_a": "0",
+                    "wins_b": "0",
+                },
+                follow_redirects=True,
+            )
+            html = response.get_data(as_text=True)
+            assert response.status_code == 200
+            assert "Счет 0:0 не применен" in html
+
+        match = Match.query.filter_by(series_id=series.id).first()
+        assert match is not None
+        assert match.home_score == 3
+        assert match.away_score == 1
 
 
 def test_leaderboard_applies_points_adjustment():
