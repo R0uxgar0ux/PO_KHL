@@ -273,6 +273,22 @@ button.danger:hover { background: #2b2b2b; }
   min-width: 0;
 }
 
+.prediction-form .match-score-row {
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.prediction-form .match-score-inputs {
+  grid-template-columns: 72px auto 72px;
+  justify-content: start;
+}
+
+.prediction-form .match-score-inputs input {
+  width: 72px;
+  min-width: 72px;
+  text-align: center;
+}
+
 .match-title {
   font-size: 13px;
   font-weight: 700;

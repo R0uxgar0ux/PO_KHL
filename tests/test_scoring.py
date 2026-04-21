@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app import (
     Match,
@@ -245,6 +245,83 @@ def test_locked_match_cannot_be_changed_in_detailed_round():
             assert response.status_code == 302
             saved = SeriesPrediction.query.filter_by(user_id=user.id, series_id=series.id).first()
             assert saved.game_scores.startswith("1:0")
+
+
+def test_detailed_predictions_can_be_updated_after_deadline_if_not_locked():
+    app = make_app()
+    with app.app_context():
+        user = User(username="u_sf_deadline", password_hash="x", display_name="u_sf_deadline")
+        series = PlayoffSeries(
+            team_a="A",
+            team_b="B",
+            conference="W",
+            round_code="SF",
+            prediction_deadline=datetime.now() - timedelta(days=1),
+        )
+        db.session.add_all([user, series])
+        db.session.flush()
+        db.session.add(
+            SeriesPrediction(
+                user_id=user.id,
+                series_id=series.id,
+                predicted_wins_a=4,
+                predicted_wins_b=2,
+                game_outcomes="A,B,A,B,A,A",
+                game_scores="2:1,1:2,3:2,1:3,2:0,1:0",
+            )
+        )
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = user.id
+            response = client.post(
+                "/predictions",
+                data={
+                    "series_id": str(series.id),
+                    "predicted_wins_a": "4",
+                    "predicted_wins_b": "2",
+                    "game_home_scores": ["2", "1", "3", "1", "2", "4"],
+                    "game_away_scores": ["1", "2", "2", "3", "0", "1"],
+                },
+                follow_redirects=True,
+            )
+            assert response.status_code == 200
+            html = response.get_data(as_text=True)
+            assert "Дедлайн прогноза по серии уже прошел" not in html
+
+        saved = SeriesPrediction.query.filter_by(user_id=user.id, series_id=series.id).first()
+        assert saved is not None
+        assert saved.game_scores.endswith("4:1")
+
+
+def test_detailed_predictions_allow_empty_match_scores():
+    app = make_app()
+    with app.app_context():
+        user = User(username="u_sf_empty", password_hash="x", display_name="u_sf_empty")
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="SF")
+        db.session.add_all([user, series])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = user.id
+            response = client.post(
+                "/predictions",
+                data={
+                    "series_id": str(series.id),
+                    "predicted_wins_a": "4",
+                    "predicted_wins_b": "2",
+                    "game_home_scores": ["", "", "", "", "", ""],
+                    "game_away_scores": ["", "", "", "", "", ""],
+                },
+                follow_redirects=False,
+            )
+            assert response.status_code == 302
+
+        saved = SeriesPrediction.query.filter_by(user_id=user.id, series_id=series.id).first()
+        assert saved is not None
+        assert saved.game_scores == ""
 
 
 def test_team_logo_url_points_to_local_static_assets():
