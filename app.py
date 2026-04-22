@@ -506,6 +506,34 @@ def serialize_game_scores(scores: list[tuple[int, int]]) -> str:
     return ",".join(f"{home}:{away}" for home, away in scores)
 
 
+def parse_game_score_slots(serialized: str, max_games: int = 7) -> list[tuple[int, int] | None]:
+    raw_parts = [part.strip() for part in serialized.split(",")] if serialized else []
+    slots: list[tuple[int, int] | None] = []
+    for idx in range(max_games):
+        token = raw_parts[idx] if idx < len(raw_parts) else ""
+        if ":" not in token:
+            slots.append(None)
+            continue
+        left, right = token.split(":", 1)
+        if not left.isdigit() or not right.isdigit():
+            slots.append(None)
+            continue
+        slots.append((int(left), int(right)))
+    return slots
+
+
+def serialize_game_score_slots(slots: list[tuple[int, int] | None]) -> str:
+    normalized: list[str] = []
+    for score in slots:
+        if score is None:
+            normalized.append("-")
+        else:
+            normalized.append(f"{score[0]}:{score[1]}")
+    while normalized and normalized[-1] == "-":
+        normalized.pop()
+    return ",".join(normalized)
+
+
 def series_actual(series: PlayoffSeries) -> dict:
     games = sorted(series.matches, key=lambda m: m.kickoff)
     outcomes: list[str] = []
@@ -571,13 +599,15 @@ def score_series_prediction(prediction: SeriesPrediction) -> dict:
         base += points
         components.append(f"точный счет серии (+{points})")
 
-    predicted_scores = parse_game_scores(prediction.game_scores)
+    predicted_slots = parse_game_score_slots(prediction.game_scores, max_games=max(7, len(actual["scores"])))
     match_winner_hits = 0
     exact_match_hits = 0
     for idx, real_score in enumerate(actual["scores"]):
-        if idx >= len(predicted_scores):
+        if idx >= len(predicted_slots):
             continue
-        predicted_score = predicted_scores[idx]
+        predicted_score = predicted_slots[idx]
+        if predicted_score is None:
+            continue
         real_winner = "A" if real_score[0] > real_score[1] else "B"
         pred_winner = "A" if predicted_score[0] > predicted_score[1] else "B"
 
@@ -1429,58 +1459,57 @@ def register_routes(app: Flask) -> None:
                     return redirect(focus_url)
 
                 locked_games = parse_locked_games(series.locked_game_indices)
-                existing_scores = parse_game_scores(prediction.game_scores) if prediction else []
-                all_blank = True
-                for raw_home, raw_away in zip(raw_home_scores, raw_away_scores):
-                    if str(raw_home).strip() or str(raw_away).strip():
-                        all_blank = False
-                        break
+                existing_slots = parse_game_score_slots(prediction.game_scores) if prediction else [None] * 7
+                updated_slots = list(existing_slots)
+                while len(updated_slots) < 7:
+                    updated_slots.append(None)
 
-                if all_blank:
-                    # Точный счет матча можно не указывать.
-                    # Если прогноз уже был сохранен — сохраняем ранее введенные точные счета.
-                    if prediction:
-                        serialized = prediction.game_outcomes or ""
-                        serialized_scores = prediction.game_scores or ""
-                else:
-                    game_scores: list[tuple[int, int]] = []
-                    outcomes: list[str] = []
+                for idx, (raw_home, raw_away) in enumerate(zip(raw_home_scores, raw_away_scores), start=1):
+                    left = str(raw_home).strip()
+                    right = str(raw_away).strip()
+                    if not left and not right:
+                        continue
+                    if not left or not right:
+                        flash(f"Матч {idx}: заполните оба поля счета или оставьте матч пустым")
+                        return redirect(focus_url)
+                    if not left.isdigit() or not right.isdigit():
+                        flash(f"Матч {idx}: укажите счет неотрицательными числами")
+                        return redirect(focus_url)
+                    home_score = int(left)
+                    away_score = int(right)
+                    if home_score == away_score:
+                        flash(f"Матч {idx}: в плей-офф не может быть ничьи")
+                        return redirect(focus_url)
 
-                    for idx, (raw_home, raw_away) in enumerate(zip(raw_home_scores, raw_away_scores), start=1):
-                        left = str(raw_home).strip()
-                        right = str(raw_away).strip()
-                        if not left or not right:
-                            flash(f"Матч {idx}: либо заполните оба поля счета, либо оставьте все счета пустыми")
+                    if idx in locked_games:
+                        prev_score = existing_slots[idx - 1] if idx - 1 < len(existing_slots) else None
+                        if prev_score is None:
+                            flash(f"Матч {idx} уже заблокирован для новых прогнозов")
                             return redirect(focus_url)
-                        if not left.isdigit() or not right.isdigit():
-                            flash(f"Матч {idx}: укажите счет неотрицательными числами")
-                            return redirect(focus_url)
-                        home_score = int(left)
-                        away_score = int(right)
-                        if home_score == away_score:
-                            flash(f"Матч {idx}: в плей-офф не может быть ничьи")
+                        if (home_score, away_score) != prev_score:
+                            flash(f"Матч {idx} заблокирован для редактирования")
                             return redirect(focus_url)
 
-                        if idx in locked_games:
-                            if idx <= len(existing_scores):
-                                prev_home, prev_away = existing_scores[idx - 1]
-                                if (home_score, away_score) != (prev_home, prev_away):
-                                    flash(f"Матч {idx} заблокирован для редактирования")
-                                    return redirect(focus_url)
-                            else:
-                                flash(f"Матч {idx} уже заблокирован для новых прогнозов")
-                                return redirect(focus_url)
+                    updated_slots[idx - 1] = (home_score, away_score)
 
-                        game_scores.append((home_score, away_score))
-                        outcomes.append("A" if home_score > away_score else "B")
+                # матчи сверх длины серии не учитываем
+                for idx in range(games_count, 7):
+                    updated_slots[idx] = None
 
+                filled_scores = [score for score in updated_slots[:games_count] if score is not None]
+                if len(filled_scores) == games_count and games_count > 0:
+                    outcomes = ["A" if home > away else "B" for home, away in filled_scores]
                     valid_sequence, message = validate_outcomes_sequence(outcomes, wins_a, wins_b)
                     if not valid_sequence:
                         flash(message)
                         return redirect(focus_url)
-
                     serialized = ",".join(outcomes)
-                    serialized_scores = serialize_game_scores(game_scores)
+                else:
+                    # Частичный прогноз по матчам: сохраняем только точные счета,
+                    # без проверки итоговой последовательности.
+                    serialized = ""
+
+                serialized_scores = serialize_game_score_slots(updated_slots[:games_count])
 
             if prediction:
                 prediction.predicted_wins_a = wins_a

@@ -324,6 +324,37 @@ def test_detailed_predictions_allow_empty_match_scores():
         assert saved.game_scores == ""
 
 
+def test_detailed_predictions_allow_single_match_score_without_filling_all_games():
+    app = make_app()
+    with app.app_context():
+        user = User(username="u_sf_single", password_hash="x", display_name="u_sf_single")
+        series = PlayoffSeries(team_a="A", team_b="B", conference="W", round_code="SF")
+        db.session.add_all([user, series])
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = user.id
+            response = client.post(
+                "/predictions",
+                data={
+                    "series_id": str(series.id),
+                    "predicted_wins_a": "4",
+                    "predicted_wins_b": "3",
+                    "game_home_scores": ["3", "", "", "", "", "", ""],
+                    "game_away_scores": ["2", "", "", "", "", "", ""],
+                },
+                follow_redirects=True,
+            )
+            html = response.get_data(as_text=True)
+            assert response.status_code == 200
+            assert "заполните оба поля счета или оставьте матч пустым" not in html
+
+        saved = SeriesPrediction.query.filter_by(user_id=user.id, series_id=series.id).first()
+        assert saved is not None
+        assert saved.game_scores == "3:2"
+
+
 def test_team_logo_url_points_to_local_static_assets():
     app = make_app()
     from app import BASE_DIR, team_logo_url
