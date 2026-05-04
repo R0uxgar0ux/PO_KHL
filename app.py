@@ -1452,11 +1452,14 @@ def register_routes(app: Flask) -> None:
             serialized_scores = ""
 
             if detailed_enabled:
-                raw_home_scores = request.form.getlist("game_home_scores")[:games_count]
-                raw_away_scores = request.form.getlist("game_away_scores")[:games_count]
-                if len(raw_home_scores) != games_count or len(raw_away_scores) != games_count:
-                    flash("Заполните точные счета всех матчей серии")
+                raw_home_scores = request.form.getlist("game_home_scores")[:7]
+                raw_away_scores = request.form.getlist("game_away_scores")[:7]
+                if len(raw_home_scores) != len(raw_away_scores):
+                    flash("Некорректные данные по счетам матчей")
                     return redirect(focus_url)
+                while len(raw_home_scores) < 7:
+                    raw_home_scores.append("")
+                    raw_away_scores.append("")
 
                 locked_games = parse_locked_games(series.locked_game_indices)
                 existing_slots = parse_game_score_slots(prediction.game_scores) if prediction else [None] * 7
@@ -1492,24 +1495,10 @@ def register_routes(app: Flask) -> None:
 
                     updated_slots[idx - 1] = (home_score, away_score)
 
-                # матчи сверх длины серии не учитываем
-                for idx in range(games_count, 7):
-                    updated_slots[idx] = None
-
-                filled_scores = [score for score in updated_slots[:games_count] if score is not None]
-                if len(filled_scores) == games_count and games_count > 0:
-                    outcomes = ["A" if home > away else "B" for home, away in filled_scores]
-                    valid_sequence, message = validate_outcomes_sequence(outcomes, wins_a, wins_b)
-                    if not valid_sequence:
-                        flash(message)
-                        return redirect(focus_url)
-                    serialized = ",".join(outcomes)
-                else:
-                    # Частичный прогноз по матчам: сохраняем только точные счета,
-                    # без проверки итоговой последовательности.
-                    serialized = ""
-
-                serialized_scores = serialize_game_score_slots(updated_slots[:games_count])
+                # Для точных счетов матчей не требуем соответствия прогнозу по серии:
+                # пользователь может менять счет любого незаблокированного матча независимо.
+                serialized = ""
+                serialized_scores = serialize_game_score_slots(updated_slots[:7])
 
             if prediction:
                 prediction.predicted_wins_a = wins_a
