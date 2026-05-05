@@ -70,20 +70,21 @@
         {% if is_detailed %}
           <div class="match-score-grid" data-games-block>
             {% for i in range(1, 8) %}
-            {% set score_pair = saved_scores[i-1].split(':') if saved_scores|length >= i and ':' in saved_scores[i-1] else ['0', '0'] %}
+            {% set raw_score = saved_scores[i-1] if saved_scores|length >= i else '' %}
+            {% set score_pair = raw_score.split(':') if ':' in raw_score else ['', ''] %}
             {% set is_locked_game = i in locked_games %}
-            {% set has_saved_match_score = prediction and saved_scores|length >= i %}
+            {% set has_saved_match_score = prediction and ':' in raw_score %}
             <div class="match-score-row" data-game-row>
               <div class="match-title">Матч {{ i }} {% if is_locked_game %}<span class="mini-lock">🔒</span>{% endif %}</div>
               <div class="match-score-inputs">
-                <input type="number" name="game_home_scores" min="0" step="1" value="{{ score_pair[0] }}" class="{% if has_saved_match_score %}saved-prediction-value{% else %}unsaved-prediction-value{% endif %}" aria-label="Матч {{ i }}: голы {{ series.team_a }}" {% if is_closed %}disabled{% elif is_locked_game %}readonly{% endif %} />
+                <input type="number" name="game_home_scores" min="0" step="1" value="{{ score_pair[0] if has_saved_match_score else '' }}" class="{% if has_saved_match_score %}saved-prediction-value{% else %}unsaved-prediction-value{% endif %}" aria-label="Матч {{ i }}: голы {{ series.team_a }}" {% if is_locked_game %}readonly{% endif %} />
                 <span>:</span>
-                <input type="number" name="game_away_scores" min="0" step="1" value="{{ score_pair[1] }}" class="{% if has_saved_match_score %}saved-prediction-value{% else %}unsaved-prediction-value{% endif %}" aria-label="Матч {{ i }}: голы {{ series.team_b }}" {% if is_closed %}disabled{% elif is_locked_game %}readonly{% endif %} />
+                <input type="number" name="game_away_scores" min="0" step="1" value="{{ score_pair[1] if has_saved_match_score else '' }}" class="{% if has_saved_match_score %}saved-prediction-value{% else %}unsaved-prediction-value{% endif %}" aria-label="Матч {{ i }}: голы {{ series.team_b }}" {% if is_locked_game %}readonly{% endif %} />
               </div>
               {% if is_locked_game %}
                 <div class="muted">прогноз на матч заблокирован</div>
-              {% elif not is_closed %}
-                <div class="muted">можно менять до дедлайна/блокировки админом</div>
+              {% else %}
+                <div class="muted">можно вносить и менять в любой момент до блокировки админом</div>
               {% endif %}
             </div>
             {% endfor %}
@@ -92,8 +93,10 @@
           <p class="muted">На этой стадии прогнозируются только итоги серии (без счетов отдельных матчей).</p>
         {% endif %}
 
-        {% if is_closed %}<p class="muted">Дедлайн серии прошёл</p>{% endif %}
-        <button type="submit" {% if is_closed %}disabled{% endif %}>Сохранить</button>
+        {% if is_closed %}
+          <p class="muted">Дедлайн серии прошёл: счёт серии заблокирован, но счёты матчей можно менять до блокировки админом.</p>
+        {% endif %}
+        <button type="submit" {% if is_closed and not is_detailed %}disabled{% endif %}>Сохранить</button>
       </form>
     </section>
     {% endfor %}
