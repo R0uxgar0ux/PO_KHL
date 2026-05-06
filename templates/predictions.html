@@ -47,7 +47,7 @@
               name="predicted_wins_a"
               data-wins-a
               class="{% if prediction %}saved-prediction-value{% else %}unsaved-prediction-value{% endif %}"
-              {% if is_closed %}disabled{% endif %}
+              {% if is_closed and not is_detailed %}disabled{% endif %}
             >
               {% for n in range(0,5) %}
                 <option value="{{ n }}" {% if prediction and prediction.predicted_wins_a == n %}selected{% elif not prediction and n==0 %}selected{% endif %}>{{ n }}</option>
@@ -59,7 +59,7 @@
               name="predicted_wins_b"
               data-wins-b
               class="{% if prediction %}saved-prediction-value{% else %}unsaved-prediction-value{% endif %}"
-              {% if is_closed %}disabled{% endif %}
+              {% if is_closed and not is_detailed %}disabled{% endif %}
             >
               {% for n in range(0,5) %}
                 <option value="{{ n }}" {% if prediction and prediction.predicted_wins_b == n %}selected{% elif not prediction and n==0 %}selected{% endif %}>{{ n }}</option>
