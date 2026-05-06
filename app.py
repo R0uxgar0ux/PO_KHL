@@ -1427,8 +1427,9 @@ def register_routes(app: Flask) -> None:
             series = PlayoffSeries.query.get_or_404(series_id)
             focus_url = f"{url_for('predictions')}#series-{series.id}"
             detailed_enabled = detailed_predictions_enabled(series.round_code)
+            series_locked = bool(series.prediction_deadline and datetime.now() > series.prediction_deadline)
 
-            if (not detailed_enabled) and series.prediction_deadline and datetime.now() > series.prediction_deadline:
+            if (not detailed_enabled) and series_locked:
                 flash("Дедлайн прогноза по серии уже прошел")
                 return redirect(focus_url)
 
@@ -1447,6 +1448,13 @@ def register_routes(app: Flask) -> None:
                 return redirect(focus_url)
 
             prediction = SeriesPrediction.query.filter_by(user_id=user.id, series_id=series.id).first()
+            if series_locked:
+                if not prediction:
+                    flash("Прогноз по серии уже заблокирован после старта серии")
+                    return redirect(focus_url)
+                if prediction.predicted_wins_a != wins_a or prediction.predicted_wins_b != wins_b:
+                    flash("После дедлайна можно менять только прогнозы на матчи, счет серии заблокирован")
+                    return redirect(focus_url)
 
             serialized = ""
             serialized_scores = ""

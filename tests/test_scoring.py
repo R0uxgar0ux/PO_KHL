@@ -295,6 +295,107 @@ def test_detailed_predictions_can_be_updated_after_deadline_if_not_locked():
         assert saved.game_scores.endswith("4:1")
 
 
+def test_series_score_is_locked_after_deadline_but_match_scores_can_change():
+    app = make_app()
+    with app.app_context():
+        user = User(username="u_series_lock", password_hash="x", display_name="u_series_lock")
+        series = PlayoffSeries(
+            team_a="A",
+            team_b="B",
+            conference="W",
+            round_code="SF",
+            prediction_deadline=datetime.now() - timedelta(days=1),
+        )
+        db.session.add_all([user, series])
+        db.session.flush()
+        db.session.add(
+            SeriesPrediction(
+                user_id=user.id,
+                series_id=series.id,
+                predicted_wins_a=4,
+                predicted_wins_b=2,
+                game_outcomes="",
+                game_scores="2:1,1:2",
+            )
+        )
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = user.id
+
+            blocked_series_change = client.post(
+                "/predictions",
+                data={
+                    "series_id": str(series.id),
+                    "predicted_wins_a": "4",
+                    "predicted_wins_b": "3",
+                    "game_home_scores": ["2", "1", "", "", "", "", ""],
+                    "game_away_scores": ["1", "2", "", "", "", "", ""],
+                },
+                follow_redirects=True,
+            )
+            assert "счет серии заблокирован" in blocked_series_change.get_data(as_text=True)
+
+            allowed_match_change = client.post(
+                "/predictions",
+                data={
+                    "series_id": str(series.id),
+                    "predicted_wins_a": "4",
+                    "predicted_wins_b": "2",
+                    "game_home_scores": ["2", "3", "", "", "", "", ""],
+                    "game_away_scores": ["1", "2", "", "", "", "", ""],
+                },
+                follow_redirects=True,
+            )
+            assert allowed_match_change.status_code == 200
+            html = allowed_match_change.get_data(as_text=True)
+            assert "Прогноз по серии обновлен" in html
+
+        saved = SeriesPrediction.query.filter_by(user_id=user.id, series_id=series.id).first()
+        assert saved is not None
+        assert saved.predicted_wins_a == 4 and saved.predicted_wins_b == 2
+        assert saved.game_scores.startswith("2:1,3:2")
+
+
+
+def test_detailed_prediction_form_keeps_all_match_rows_after_deadline():
+    app = make_app()
+    with app.app_context():
+        user = User(username="u_form_all_games", password_hash="x", display_name="u_form_all_games")
+        series = PlayoffSeries(
+            team_a="A",
+            team_b="B",
+            conference="W",
+            round_code="SF",
+            prediction_deadline=datetime.now() - timedelta(days=1),
+        )
+        db.session.add_all([user, series])
+        db.session.flush()
+        db.session.add(
+            SeriesPrediction(
+                user_id=user.id,
+                series_id=series.id,
+                predicted_wins_a=2,
+                predicted_wins_b=4,
+                game_outcomes="",
+                game_scores="1:4,2:1,0:2,-,3:1,1:2",
+            )
+        )
+        db.session.commit()
+
+        with app.test_client() as client:
+            with client.session_transaction() as sess:
+                sess["user_id"] = user.id
+            response = client.get("/predictions")
+            html = response.get_data(as_text=True)
+            assert response.status_code == 200
+            assert 'data-detailed="true"' in html
+            assert 'name="predicted_wins_a" value="2"' in html
+            assert 'name="predicted_wins_b" value="4"' in html
+            assert "Матч 7" in html
+            assert "const visible = detailed ? true : idx < games;" in html
+
 def test_detailed_predictions_allow_empty_match_scores():
     app = make_app()
     with app.app_context():

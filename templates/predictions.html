@@ -22,7 +22,7 @@
     {% set locked_games = locked_games_by_series.get(series.id, []) %}
 
     <section class="card series-card-modern series-card-wide" id="series-{{ series.id }}">
-      <form method="post" class="prediction-form series-form series-form-horizontal" data-series-id="{{ series.id }}">
+      <form method="post" class="prediction-form series-form series-form-horizontal" data-series-id="{{ series.id }}" {% if is_detailed %}data-detailed="true"{% endif %}>
         <input type="hidden" name="series_id" value="{{ series.id }}" />
 
         <div class="series-head-row">
@@ -42,6 +42,7 @@
           <label>Счёт серии</label>
           <div class="scoreline-row improved">
             <span class="team-name-wrap"><span class="team-name-with-logo"><img class="team-logo" src="{{ team_logo_url(series.team_a) }}" alt="" loading="lazy" /><span>{{ series.team_a }}</span></span></span>
+            {% if is_closed and prediction %}<input type="hidden" name="predicted_wins_a" value="{{ prediction.predicted_wins_a }}" />{% endif %}
             <select
               name="predicted_wins_a"
               data-wins-a
@@ -53,6 +54,7 @@
               {% endfor %}
             </select>
             <strong>:</strong>
+            {% if is_closed and prediction %}<input type="hidden" name="predicted_wins_b" value="{{ prediction.predicted_wins_b }}" />{% endif %}
             <select
               name="predicted_wins_b"
               data-wins-b
@@ -93,7 +95,9 @@
           <p class="muted">На этой стадии прогнозируются только итоги серии (без счетов отдельных матчей).</p>
         {% endif %}
 
-        {% if is_closed and not is_detailed %}<p class="muted">Дедлайн серии прошёл</p>{% endif %}
+        {% if is_closed %}
+          <p class="muted">Дедлайн серии прошёл: счёт серии заблокирован, но счёты матчей можно менять до блокировки админом.</p>
+        {% endif %}
         <button type="submit" {% if is_closed and not is_detailed %}disabled{% endif %}>Сохранить</button>
       </form>
     </section>
@@ -128,9 +132,10 @@
 
   function updateSeriesForm(form) {
     const games = normalizeSeriesScore(form);
+    const detailed = form.getAttribute('data-detailed') === 'true';
     const rows = form.querySelectorAll('[data-game-row]');
     rows.forEach((row, idx) => {
-      const visible = idx < games;
+      const visible = detailed ? true : idx < games;
       row.style.display = visible ? 'grid' : 'none';
       row.querySelectorAll('input').forEach((input) => {
         if (!input.hasAttribute('readonly')) {
